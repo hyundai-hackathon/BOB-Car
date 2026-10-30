@@ -33,3 +33,34 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Local only: Claude Code, project docs, official Pleos sample (not ours to redistribute)
+.claude/
+docs/
+reference/
+
+# Submission APK (D2) is committed on purpose
+!apk/*_release.apk
+
+# Secrets: service account keys, env files, Playground credentials
+*service-account*.json
+*-firebase-adminsdk-*.json
+serviceAccountKey*.json
+.env
+.env.*
+!.env.example
+secrets/
+
+# Node / Firebase (server, admin-web)
+node_modules/
+server/functions/lib/
+admin-web/dist/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+emulator-data/
+
+# OS files
+Thumbs.db
+.DS_Store
