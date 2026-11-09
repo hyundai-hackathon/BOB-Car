@@ -20,4 +20,7 @@ object SignalConfig {
 
     /** The same driver departing again within this time continues the previous trip. */
     const val TRIP_MERGE_WINDOW_MS = 10 * 60_000L
+
+    /** On start, wait at most this long for the first seat and gear values before rebuilding the state. */
+    const val RESUME_WAIT_MS = 3_000L
 }

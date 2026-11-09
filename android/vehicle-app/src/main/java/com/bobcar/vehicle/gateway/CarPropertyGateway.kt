@@ -90,12 +90,19 @@ class CarPropertyGateway(context: Context) {
             @Suppress("DEPRECATION")
             if (value.status != CarPropertyValue.STATUS_AVAILABLE) return
             val raw = value.value as? Int ?: return
-            signals?.post { onGearRaw(raw) }
+            val s = signals ?: return
+            if (s.fakeMode) return
+            s.post { onGearRaw(raw) }
         }
 
         override fun onErrorEvent(propId: Int, areaId: Int) {
             Log.w(TAG, "property error propId=$propId areaId=$areaId")
         }
+    }
+
+    /** Debug only: feeds a raw VehicleGear value through the same 1-second hold as real values. */
+    fun injectGear(raw: Int) {
+        signals?.post { onGearRaw(raw) }
     }
 
     // ---------------------------------------------------------------- clean-up (signal thread)

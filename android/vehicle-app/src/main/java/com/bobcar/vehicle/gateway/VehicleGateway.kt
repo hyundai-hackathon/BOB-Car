@@ -231,10 +231,22 @@ class VehicleGateway(context: Context) {
         )
     }
 
+    // ---------------------------------------------------------------- fake values (debug)
+
+    /** Feeds values through the same clean-up as SDK values. Used by the debug fake signal receiver. */
+    fun injectSeat(occupied: Boolean) = signals?.post { onSeatRaw(!occupied) }
+    fun injectBrake(pressed: Boolean) = signals?.post { onBrakeRaw(pressed) }
+    fun injectDoor(open: Boolean) = signals?.post { onDoorRaw(if (open) 1 else 0) }
+    fun injectOdometer(km: Float) = signals?.post { onOdometerRaw(km) }
+    fun injectSoc(percent: Int) = signals?.post { onSocRaw(percent) }
+
     // ---------------------------------------------------------------- helpers
 
+    /** Posts a real SDK value; dropped while fake mode is on. */
     private fun post(block: () -> Unit) {
-        signals?.post(block)
+        val s = signals ?: return
+        if (s.fakeMode) return
+        s.post(block)
     }
 
     private fun logFailure(e: Exception) {

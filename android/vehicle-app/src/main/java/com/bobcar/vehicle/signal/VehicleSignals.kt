@@ -24,6 +24,19 @@ class VehicleSignals {
 
     private val listeners = CopyOnWriteArrayList<(SignalEvent) -> Unit>()
 
+    /**
+     * Debug only: while true, gateways drop real SDK values and only injected (fake) values are used.
+     * Needed because Pleos re-sends unchanged values every few seconds (B2) and would overwrite fakes.
+     */
+    private val _fakeModeFlow = MutableStateFlow(false)
+    val fakeModeFlow: StateFlow<Boolean> = _fakeModeFlow.asStateFlow()
+    val fakeMode: Boolean get() = _fakeModeFlow.value
+
+    fun setFakeMode(on: Boolean) {
+        _fakeModeFlow.value = on
+        Log.i(TAG, "signal source = ${if (on) "FAKE (real values dropped)" else "REAL"}")
+    }
+
     fun addListener(listener: (SignalEvent) -> Unit) {
         listeners += listener
     }

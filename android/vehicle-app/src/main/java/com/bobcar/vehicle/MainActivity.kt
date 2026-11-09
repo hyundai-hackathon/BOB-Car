@@ -4,21 +4,17 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.bobcar.vehicle.debug.FakeSignalInjector
+import com.bobcar.vehicle.driving.DrivingMonitor
 import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.NaviGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.ui.DiagnosticScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -27,12 +23,15 @@ class MainActivity : ComponentActivity() {
     private lateinit var vehicleGateway: VehicleGateway
     private lateinit var carPropertyGateway: CarPropertyGateway
     private lateinit var naviGateway: NaviGateway
+    private lateinit var drivingMonitor: DrivingMonitor
+    private lateinit var unregisterFakeSignals: () -> Unit
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "MainActivity created (version ${BuildConfig.VERSION_NAME})")
 
         signals = VehicleSignals()
+        drivingMonitor = DrivingMonitor(signals).also { it.start() }
         vehicleGateway = VehicleGateway(this).also {
             if (it.initialize()) it.startSignals(signals)
         }
@@ -43,15 +42,24 @@ class MainActivity : ComponentActivity() {
             it.startSignals(signals)
             it.initialize()
         }
+        unregisterFakeSignals = FakeSignalInjector.register(
+            this, signals, vehicleGateway, carPropertyGateway, drivingMonitor,
+        )
 
         setContent {
+            val snapshot by signals.snapshot.collectAsState()
+            val state by drivingMonitor.state.collectAsState()
+            val recentEvents by drivingMonitor.recentEvents.collectAsState()
+            val fakeMode by signals.fakeModeFlow.collectAsState()
             MaterialTheme(colorScheme = darkColorScheme()) {
-                HomeScreen()
+                DiagnosticScreen(snapshot, state, recentEvents, fakeMode)
             }
         }
     }
 
     override fun onDestroy() {
+        unregisterFakeSignals()
+        drivingMonitor.stop()
         naviGateway.release()
         carPropertyGateway.release()
         vehicleGateway.release()
@@ -62,25 +70,5 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "BOBCar"
-    }
-}
-
-@Composable
-fun HomeScreen() {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.displayMedium,
-            )
-        }
-    }
-}
-
-@Preview(widthDp = 1280, heightDp = 720)
-@Composable
-private fun HomeScreenPreview() {
-    MaterialTheme(colorScheme = darkColorScheme()) {
-        HomeScreen()
     }
 }
