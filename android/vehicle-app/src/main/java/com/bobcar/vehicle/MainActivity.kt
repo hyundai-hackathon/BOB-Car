@@ -15,11 +15,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import com.bobcar.vehicle.gateway.CarPropertyGateway
+import com.bobcar.vehicle.gateway.VehicleGateway
 
 class MainActivity : ComponentActivity() {
+
+    // Temporary owner until the collection service exists; the gateways move there later.
+    private lateinit var vehicleGateway: VehicleGateway
+    private lateinit var carPropertyGateway: CarPropertyGateway
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "MainActivity created (version ${BuildConfig.VERSION_NAME})")
+
+        vehicleGateway = VehicleGateway(this).also { it.initialize() }
+        carPropertyGateway = CarPropertyGateway(this).also {
+            if (it.connect()) it.readGearOnce()
+        }
+
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 HomeScreen()
@@ -28,6 +41,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        carPropertyGateway.release()
+        vehicleGateway.release()
         Log.i(TAG, "MainActivity destroyed")
         super.onDestroy()
     }

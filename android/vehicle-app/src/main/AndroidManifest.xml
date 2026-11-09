@@ -5,6 +5,24 @@
         android:name="android.hardware.type.automotive"
         android:required="true" />
 
+    <!-- Pleos read permissions (Vehicle Service protectionLevel="normal", no runtime request) -->
+    <!-- Odometer distance, brake pedal -->
+    <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
+    <!-- EV battery state of charge, fuel percent (real ICE car) -->
+    <uses-permission android:name="pleos.car.permission.CAR_ENERGY" />
+    <!-- Driver seat occupancy -->
+    <uses-permission android:name="pleos.car.permission.CAR_SEATS" />
+    <!-- Driver door position -->
+    <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
+    <!-- VIN -->
+    <uses-permission android:name="pleos.car.permission.CAR_INFO" />
+
+    <!-- Android car properties (normal) -->
+    <!-- GEAR_SELECTION -->
+    <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
+    <!-- INFO_EV_BATTERY_CAPACITY, INFO_FUEL_CAPACITY -->
+    <uses-permission android:name="android.car.permission.CAR_INFO" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
