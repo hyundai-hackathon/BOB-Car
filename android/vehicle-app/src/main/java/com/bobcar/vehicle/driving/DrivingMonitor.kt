@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Connects [VehicleSignals] to [DrivingStateMachine] on the signal thread:
@@ -25,6 +26,13 @@ class DrivingMonitor(private val signals: VehicleSignals) {
 
     private val _recentEvents = MutableStateFlow<List<String>>(emptyList())
     val recentEvents: StateFlow<List<String>> = _recentEvents.asStateFlow()
+
+    private val eventListeners = CopyOnWriteArrayList<(DrivingEvent) -> Unit>()
+
+    /** Called on the signal thread for every driving event (e.g. to store it). */
+    fun addEventListener(listener: (DrivingEvent) -> Unit) {
+        eventListeners += listener
+    }
 
     // --- touched only on the signal thread ---
     private var resumed = false
@@ -90,6 +98,7 @@ class DrivingMonitor(private val signals: VehicleSignals) {
         val line = "${clock.format(Date())} ${describe(event)}"
         Log.i(TAG, describe(event))
         _recentEvents.value = (listOf(line) + _recentEvents.value).take(RECENT_EVENT_COUNT)
+        eventListeners.forEach { it(event) }
     }
 
     private fun describe(event: DrivingEvent): String = when (event) {

@@ -8,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.bobcar.vehicle.data.BobCarDatabase
+import com.bobcar.vehicle.data.DrivingRecorder
 import com.bobcar.vehicle.debug.FakeSignalInjector
 import com.bobcar.vehicle.driving.DrivingMonitor
 import com.bobcar.vehicle.gateway.CarPropertyGateway
@@ -24,14 +26,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var carPropertyGateway: CarPropertyGateway
     private lateinit var naviGateway: NaviGateway
     private lateinit var drivingMonitor: DrivingMonitor
+    private lateinit var recorder: DrivingRecorder
     private lateinit var unregisterFakeSignals: () -> Unit
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "MainActivity created (version ${BuildConfig.VERSION_NAME})")
 
+        val db = BobCarDatabase.get(this)
+        recorder = DrivingRecorder(db)
         signals = VehicleSignals()
-        drivingMonitor = DrivingMonitor(signals).also { it.start() }
+        drivingMonitor = DrivingMonitor(signals).also {
+            it.addEventListener(recorder::record)
+            it.start()
+        }
         vehicleGateway = VehicleGateway(this).also {
             if (it.initialize()) it.startSignals(signals)
         }
@@ -46,13 +54,17 @@ class MainActivity : ComponentActivity() {
             this, signals, vehicleGateway, carPropertyGateway, drivingMonitor,
         )
 
+        val storedEventCountFlow = db.vehicleEventDao().countFlow()
+        val pendingUploadCountFlow = db.uploadQueueDao().pendingCountFlow()
         setContent {
             val snapshot by signals.snapshot.collectAsState()
             val state by drivingMonitor.state.collectAsState()
             val recentEvents by drivingMonitor.recentEvents.collectAsState()
             val fakeMode by signals.fakeModeFlow.collectAsState()
+            val storedEventCount by storedEventCountFlow.collectAsState(initial = 0)
+            val pendingUploadCount by pendingUploadCountFlow.collectAsState(initial = 0)
             MaterialTheme(colorScheme = darkColorScheme()) {
-                DiagnosticScreen(snapshot, state, recentEvents, fakeMode)
+                DiagnosticScreen(snapshot, state, recentEvents, fakeMode, storedEventCount, pendingUploadCount)
             }
         }
     }
@@ -64,6 +76,7 @@ class MainActivity : ComponentActivity() {
         carPropertyGateway.release()
         vehicleGateway.release()
         signals.close()
+        recorder.close()
         Log.i(TAG, "MainActivity destroyed")
         super.onDestroy()
     }

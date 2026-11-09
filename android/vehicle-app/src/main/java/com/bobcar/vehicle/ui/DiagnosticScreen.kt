@@ -40,6 +40,8 @@ fun DiagnosticScreen(
     state: DrivingState,
     recentEvents: List<String>,
     fakeMode: Boolean,
+    storedEventCount: Int,
+    pendingUploadCount: Int,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(32.dp)) {
@@ -64,6 +66,12 @@ fun DiagnosticScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("운행 상태", style = MaterialTheme.typography.titleLarge)
                     Text(stateLabel(state), style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(16.dp))
+                    Text("기록", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "저장된 이벤트 ${storedEventCount}건 · 미전송 ${pendingUploadCount}건",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
                     Spacer(Modifier.height(16.dp))
                     Text("최근 이벤트", style = MaterialTheme.typography.titleMedium)
                     recentEvents.forEach {
@@ -124,6 +132,8 @@ private fun DiagnosticScreenPreview() {
             state = DrivingState.Driving(0, Gear.DRIVE),
             recentEvents = listOf("10:00:01 Boarded", "10:00:05 CheckinClosed (BRAKE_IN_PARK)", "10:00:08 TripStarted"),
             fakeMode = false,
+            storedEventCount = 12,
+            pendingUploadCount = 12,
         )
     }
 }
