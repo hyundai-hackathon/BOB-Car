@@ -46,6 +46,8 @@ dependencies {
     implementation(libs.pleos.navi.helper)
     // Vehicle SDK pulls kotlin-reflect 1.9.25; pin it to the project's Kotlin version (same as the official sample)
     implementation(libs.kotlin.reflect)
+    // StateFlow for the signal snapshot (same version the SDK and lifecycle already resolve to)
+    implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
