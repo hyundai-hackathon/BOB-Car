@@ -18,10 +18,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.NaviGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
+import com.bobcar.vehicle.signal.VehicleSignals
 
 class MainActivity : ComponentActivity() {
 
-    // Temporary owner until the collection service exists; the gateways move there later.
+    // Temporary owner until the foreground collection service exists; everything moves there later.
+    private lateinit var signals: VehicleSignals
     private lateinit var vehicleGateway: VehicleGateway
     private lateinit var carPropertyGateway: CarPropertyGateway
     private lateinit var naviGateway: NaviGateway
@@ -30,13 +32,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "MainActivity created (version ${BuildConfig.VERSION_NAME})")
 
+        signals = VehicleSignals()
         vehicleGateway = VehicleGateway(this).also {
-            if (it.initialize()) it.readDistanceDrivenOnce { }
+            if (it.initialize()) it.startSignals(signals)
         }
         carPropertyGateway = CarPropertyGateway(this).also {
-            if (it.connect()) it.readGearOnce()
+            if (it.connect()) it.startSignals(signals)
         }
-        naviGateway = NaviGateway(this).also { it.initialize() }
+        naviGateway = NaviGateway(this).also {
+            it.startSignals(signals)
+            it.initialize()
+        }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -49,6 +55,7 @@ class MainActivity : ComponentActivity() {
         naviGateway.release()
         carPropertyGateway.release()
         vehicleGateway.release()
+        signals.close()
         Log.i(TAG, "MainActivity destroyed")
         super.onDestroy()
     }

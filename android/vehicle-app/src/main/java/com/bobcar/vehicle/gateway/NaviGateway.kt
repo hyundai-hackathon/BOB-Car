@@ -7,11 +7,14 @@ import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.content.Context
 import android.util.Log
+import com.bobcar.vehicle.signal.RouteStart
+import com.bobcar.vehicle.signal.SignalEvent
+import com.bobcar.vehicle.signal.VehicleSignals
 
 /**
  * The only entry point to the Pleos NaviHelper SDK.
- * Destination and toll fare are kept here later; for now events are only logged.
- * Place names are masked in logs (personal data).
+ * Publishes guidance start (expected toll fare: only RouteStartInfo.tollFare is valid, day1-check 14)
+ * to [VehicleSignals]. Place names are masked in logs (personal data).
  */
 class NaviGateway(context: Context) {
 
@@ -20,6 +23,17 @@ class NaviGateway(context: Context) {
     @Volatile
     private var initialized = false
 
+    @Volatile
+    private var signals: VehicleSignals? = null
+
+    fun startSignals(target: VehicleSignals) {
+        signals = target
+    }
+
+    fun stopSignals() {
+        signals = null
+    }
+
     private val listener = object : NaviHelperEventListener {
         override fun onRouteStarted(routeStartInfo: RouteStartInfo) {
             Log.i(
@@ -27,6 +41,20 @@ class NaviGateway(context: Context) {
                 "onRouteStarted tollFare=${routeStartInfo.tollFare} distance=${routeStartInfo.distance} " +
                     "duration=${routeStartInfo.duration} name=${mask(routeStartInfo.name)}"
             )
+            val s = signals ?: return
+            s.post {
+                val route = RouteStart(
+                    tollFare = routeStartInfo.tollFare,
+                    distanceMeters = routeStartInfo.distance,
+                    destinationName = routeStartInfo.name,
+                    at = s.now(),
+                )
+                s.publish(
+                    "routeStarted tollFare=${route.tollFare} name=${mask(route.destinationName)}",
+                    { it.copy(lastRouteStart = route) },
+                    SignalEvent.RouteStarted(route),
+                )
+            }
         }
 
         override fun onDestinationInfo(destinationInfo: DestinationInfo) {
@@ -65,6 +93,7 @@ class NaviGateway(context: Context) {
     }
 
     fun release() {
+        stopSignals()
         if (!initialized) return
         try {
             naviHelper.removeListener(listener)
