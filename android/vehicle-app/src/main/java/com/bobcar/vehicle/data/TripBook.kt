@@ -94,12 +94,13 @@ class TripBook(private val db: BobCarDatabase) {
      * App or service came back. Lines up the stored trip with what the car is doing now:
      * driving with no stored trip → start one now; a stored trip but not driving → it ended while
      * the app was off, close it now ([TripEntity.END_APP_RESTART]). Otherwise nothing changes.
+     * [drivingNow] null = gear not known yet: leave everything as it is until it is.
      */
-    suspend fun onAppResumed(at: Long, drivingNow: Boolean, reading: Reading): TripEntity? {
+    suspend fun onAppResumed(at: Long, drivingNow: Boolean?, reading: Reading): TripEntity? {
         val active = trips.getActive()
         return when {
-            drivingNow && active == null -> onTripStarted(at, merged = false, reading)
-            !drivingNow && active != null -> onTripEnded(at, TripEntity.END_APP_RESTART, reading)
+            drivingNow == true && active == null -> onTripStarted(at, merged = false, reading)
+            drivingNow == false && active != null -> onTripEnded(at, TripEntity.END_APP_RESTART, reading)
             else -> active
         }
     }

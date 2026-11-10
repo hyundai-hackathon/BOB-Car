@@ -249,6 +249,27 @@ class DrivingStateMachineTest {
         assertEquals(DrivingState.CheckingIn(100_000, checkinClosed = true), machine.state)
     }
 
+    @Test
+    fun resumeWithoutGearSaysGearUnknownAndLateGearRebuildsDriving() {
+        // Restart in D: seat came in, the gear did not before the wait ran out
+        machine.resume(seatOccupied = true, gear = null, at = 100_000)
+        val first = events.last() as DrivingEvent.AppResumed
+        assertEquals(false, first.gearKnown)
+        assertTrue(first.state is DrivingState.CheckingIn)
+
+        // The first gear arrives (no GearChanged for a first value): resume again
+        machine.resume(seatOccupied = true, gear = Gear.DRIVE, at = 101_000)
+        gear = Gear.DRIVE
+        val second = events.last() as DrivingEvent.AppResumed
+        assertEquals(true, second.gearKnown)
+        assertEquals(DrivingState.Driving(101_000, Gear.DRIVE), second.state)
+
+        // and the trip can end normally
+        shift(130_000, Gear.PARK)
+        machine.onTick(130_000 + COUNTDOWN)
+        assertEquals(listOf("AppResumed", "AppResumed", "EndCountdownStarted", "TripEnded"), types())
+    }
+
     private companion object {
         const val COUNTDOWN = 10_000L
         const val MERGE = 10 * 60_000L

@@ -69,7 +69,8 @@ class DrivingRecorder(
         is DrivingEvent.EndCountdownStarted -> "EndCountdownStarted" to "countdownMs=${event.deadline - event.at}"
         is DrivingEvent.EndCountdownCancelled -> "EndCountdownCancelled" to "reason=${event.reason}"
         is DrivingEvent.TripEnded -> "TripEnded" to "reason=${event.reason}"
-        is DrivingEvent.AppResumed -> "AppResumed" to "state=${event.state::class.simpleName}"
+        is DrivingEvent.AppResumed ->
+            "AppResumed" to "state=${event.state::class.simpleName}${if (event.gearKnown) "" else " gear=unknown"}"
     }
 
     private companion object {

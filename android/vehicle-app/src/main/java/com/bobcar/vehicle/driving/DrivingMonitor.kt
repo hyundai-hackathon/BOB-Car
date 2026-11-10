@@ -61,6 +61,7 @@ class DrivingMonitor(private val signals: VehicleSignals) {
     fun stop() {
         signals.removeListener(signalListener)
         signals.handler.removeCallbacks(countdownTick)
+        signals.handler.removeCallbacks(resumeOnFirstGear)
     }
 
     /** [계속 운행]. The countdown card comes with the trip-end screen; for now this is reached via fake signals. */
@@ -85,6 +86,24 @@ class DrivingMonitor(private val signals: VehicleSignals) {
         machine.resume(snapshot.driverSeatOccupied, snapshot.gear, now)
         resumed = true
         afterChange()
+        if (snapshot.gear == null) signals.handler.postDelayed(resumeOnFirstGear, GEAR_POLL_MS)
+    }
+
+    /**
+     * Resumed without a gear: the first gear value has no GearChanged event, so rebuild the state again
+     * when it arrives. Until then no gear events can have moved the state past Idle / CheckingIn.
+     */
+    private val resumeOnFirstGear: Runnable = object : Runnable {
+        override fun run() {
+            val snapshot = signals.snapshot.value
+            if (snapshot.gear == null) {
+                signals.handler.postDelayed(this, GEAR_POLL_MS)
+                return
+            }
+            Log.i(TAG, "first gear ${snapshot.gear} after resume, rebuilding the state")
+            machine.resume(snapshot.driverSeatOccupied, snapshot.gear, signals.now())
+            afterChange()
+        }
     }
 
     /** Publishes the state and (re)arms the countdown timer for the current deadline. */
@@ -112,12 +131,14 @@ class DrivingMonitor(private val signals: VehicleSignals) {
         is DrivingEvent.EndCountdownStarted -> "EndCountdownStarted (${(event.deadline - event.at) / 1000}s)"
         is DrivingEvent.EndCountdownCancelled -> "EndCountdownCancelled (${event.reason})"
         is DrivingEvent.TripEnded -> "TripEnded (${event.reason})"
-        is DrivingEvent.AppResumed -> "AppResumed -> ${event.state::class.simpleName}"
+        is DrivingEvent.AppResumed ->
+            "AppResumed -> ${event.state::class.simpleName}${if (event.gearKnown) "" else " (gear unknown)"}"
     }
 
     private companion object {
         const val TAG = "BOBCar.Driving"
         const val RESUME_POLL_MS = 200L
+        const val GEAR_POLL_MS = 1_000L
         const val RECENT_EVENT_COUNT = 8
         val clock = SimpleDateFormat("HH:mm:ss", Locale.KOREA)
     }

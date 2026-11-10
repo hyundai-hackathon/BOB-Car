@@ -44,7 +44,8 @@ class TripRecorder(db: BobCarDatabase, private val signals: VehicleSignals) {
                 else Log.i(TAG, "trip #${trip.id} ended (${trip.endReason}) ${describe(trip)}")
             }
             is DrivingEvent.AppResumed -> write("resume") {
-                val drivingNow = event.state is DrivingState.Driving || event.state is DrivingState.EndCountdown
+                val drivingNow = if (!event.gearKnown) null
+                else event.state is DrivingState.Driving || event.state is DrivingState.EndCountdown
                 val trip = book.onAppResumed(at, drivingNow, reading)
                 Log.i(TAG, "resume drivingNow=$drivingNow trip=${trip?.let { "#${it.id} ${it.status} ${describe(it)}" } ?: "none"}")
             }

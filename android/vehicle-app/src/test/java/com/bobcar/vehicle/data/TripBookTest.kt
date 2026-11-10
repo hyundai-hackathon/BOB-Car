@@ -166,6 +166,23 @@ class TripBookTest {
     }
 
     @Test
+    fun appResumedWithGearUnknownKeepsTheStoredTripOpen() = runTest {
+        val trip = book.onTripStarted(1_000, merged = false, reading(100f))
+
+        val afterRestart = TripBook(db).onAppResumed(5_000, drivingNow = null, reading(103f))!!
+
+        assertEquals(trip.id, afterRestart.id)
+        assertEquals(TripEntity.STATUS_ACTIVE, afterRestart.status)
+        assertNull(afterRestart.endedAt)
+    }
+
+    @Test
+    fun appResumedWithGearUnknownAndNoStoredTripStartsNothing() = runTest {
+        assertNull(book.onAppResumed(5_000, drivingNow = null, reading(100f)))
+        assertNull(db.tripDao().getActive())
+    }
+
+    @Test
     fun appResumedIdleWithNothingStoredDoesNothing() = runTest {
         assertNull(book.onAppResumed(5_000, drivingNow = false, reading(100f)))
         assertNull(db.tripDao().getActive())

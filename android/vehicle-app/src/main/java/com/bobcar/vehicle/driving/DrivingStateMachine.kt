@@ -33,7 +33,11 @@ class DrivingStateMachine(
 
     private data class LastTrip(val endedAt: Long, val driverId: String?)
 
-    /** App or service start: rebuild the state from current values instead of waiting for changes. */
+    /**
+     * App or service start: rebuild the state from current values instead of waiting for changes.
+     * With [gear] null the car counts as not driving for now, and the event says the gear is unknown;
+     * call again once the gear is known.
+     */
     fun resume(seatOccupied: Boolean?, gear: Gear?, at: Long) {
         this.seatOccupied = seatOccupied == true
         this.gear = gear
@@ -42,7 +46,7 @@ class DrivingStateMachine(
             this.seatOccupied -> DrivingState.CheckingIn(at, checkinClosed = false)
             else -> DrivingState.Idle
         }
-        emit(DrivingEvent.AppResumed(at, state))
+        emit(DrivingEvent.AppResumed(at, state, gearKnown = gear != null))
     }
 
     fun onSignal(event: SignalEvent) {
