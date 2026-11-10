@@ -10,6 +10,7 @@ import android.util.Log
 import com.bobcar.vehicle.signal.RouteStart
 import com.bobcar.vehicle.signal.SignalEvent
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.util.maskForLog
 
 /**
  * The only entry point to the Pleos NaviHelper SDK.
@@ -39,7 +40,7 @@ class NaviGateway(context: Context) {
             Log.i(
                 TAG,
                 "onRouteStarted tollFare=${routeStartInfo.tollFare} distance=${routeStartInfo.distance} " +
-                    "duration=${routeStartInfo.duration} name=${mask(routeStartInfo.name)}"
+                    "duration=${routeStartInfo.duration} name=${maskForLog(routeStartInfo.name)}"
             )
             val s = signals ?: return
             s.post {
@@ -50,7 +51,7 @@ class NaviGateway(context: Context) {
                     at = s.now(),
                 )
                 s.publish(
-                    "routeStarted tollFare=${route.tollFare} name=${mask(route.destinationName)}",
+                    "routeStarted tollFare=${route.tollFare} name=${maskForLog(route.destinationName)}",
                     { it.copy(lastRouteStart = route) },
                     SignalEvent.RouteStarted(route),
                 )
@@ -60,7 +61,7 @@ class NaviGateway(context: Context) {
         override fun onDestinationInfo(destinationInfo: DestinationInfo) {
             Log.i(
                 TAG,
-                "onDestinationInfo name=${mask(destinationInfo.name)} " +
+                "onDestinationInfo name=${maskForLog(destinationInfo.name)} " +
                     "remainDistance=${destinationInfo.remainDistance} tollFare=${destinationInfo.tollFare}"
             )
         }
@@ -105,9 +106,6 @@ class NaviGateway(context: Context) {
             initialized = false
         }
     }
-
-    private fun mask(text: String): String =
-        if (text.isEmpty()) "(empty)" else text.take(2) + "***(${text.length})"
 
     private companion object {
         const val TAG = "BOBCar.Navi"
