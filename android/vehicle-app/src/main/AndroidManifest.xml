@@ -26,6 +26,12 @@
     <!-- NaviHelper: getDestinationInfo, getBookmarkInfo, getCurrentLocationInfo (@RequiresPermission), onRouteStarted -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
 
+    <!-- Foreground collection service (keeps the app from being frozen in the background, troubleshooting B11) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Shows the "collecting" notification on API 33+ (runtime permission; the service runs without it) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -43,6 +49,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.CollectionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Continuous collection of vehicle signals (gear, seat, odometer, battery, navigation) for the corporate vehicle logbook" />
+        </service>
     </application>
 
 </manifest>

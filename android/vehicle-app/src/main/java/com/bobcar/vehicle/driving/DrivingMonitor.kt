@@ -34,6 +34,10 @@ class DrivingMonitor(private val signals: VehicleSignals) {
         eventListeners += listener
     }
 
+    fun removeEventListener(listener: (DrivingEvent) -> Unit) {
+        eventListeners -= listener
+    }
+
     // --- touched only on the signal thread ---
     private var resumed = false
     private val countdownTick = Runnable {
