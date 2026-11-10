@@ -41,8 +41,12 @@ sealed interface DrivingEvent {
     /** Trip confirmed as ended. */
     data class TripEnded(override val at: Long, val reason: EndReason) : DrivingEvent
 
-    /** App or service (re)started; [state] was rebuilt from the current signals. */
-    data class AppResumed(override val at: Long, val state: DrivingState) : DrivingEvent
+    /**
+     * App or service (re)started; [state] was rebuilt from the current signals.
+     * [gearKnown] = false: no gear value yet, so whether the car is driving is unknown (a running trip
+     * must not be closed). Another AppResumed follows once the gear arrives.
+     */
+    data class AppResumed(override val at: Long, val state: DrivingState, val gearKnown: Boolean = true) : DrivingEvent
 }
 
 enum class CheckinTrigger { BRAKE_IN_PARK, TRIP_START }

@@ -6,6 +6,7 @@ import android.os.HandlerThread
 import android.util.Log
 import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.data.DrivingRecorder
+import com.bobcar.vehicle.data.TripRecorder
 import com.bobcar.vehicle.debug.FakeSignalInjector
 import com.bobcar.vehicle.driving.DrivingEvent
 import com.bobcar.vehicle.driving.DrivingMonitor
@@ -39,6 +40,7 @@ object VehicleRuntime {
     private var navi: NaviGateway? = null
     private var recorder: DrivingRecorder? = null
     private var recordListener: ((DrivingEvent) -> Unit)? = null
+    private var tripRecorder: TripRecorder? = null
     private var unregisterFakeSignals: (() -> Unit)? = null
 
     @Synchronized
@@ -47,11 +49,16 @@ object VehicleRuntime {
         started = true
         val app = context.applicationContext
 
-        val rec = DrivingRecorder(BobCarDatabase.get(app)) { UploadScheduler.request(app) }
+        val db = BobCarDatabase.get(app)
+        val rec = DrivingRecorder(db) { UploadScheduler.request(app) }
         val listener: (DrivingEvent) -> Unit = rec::record
         recorder = rec
         recordListener = listener
         monitor.addEventListener(listener)
+        // Trip rows (logbook): registered before monitor.start so the first AppResumed is seen
+        val trips = TripRecorder(db, signals).also { tripRecorder = it }
+        monitor.addEventListener(trips.onDrivingEvent)
+        trips.start()
         monitor.start()
         // Send what piled up while the app or the server was off
         UploadScheduler.request(app)
@@ -77,15 +84,18 @@ object VehicleRuntime {
         unregisterFakeSignals?.invoke()
         monitor.stop()
         recordListener?.let { monitor.removeEventListener(it) }
+        tripRecorder?.let { monitor.removeEventListener(it.onDrivingEvent) }
         val v = vehicle
         val c = carProperty
         val n = navi
         val rec = recorder
+        val trips = tripRecorder
         initHandler.post {
             n?.release()
             c?.release()
             v?.release()
             rec?.close()
+            trips?.close()
             Log.i(TAG, "collection stopped")
         }
         vehicle = null
@@ -93,6 +103,7 @@ object VehicleRuntime {
         navi = null
         recorder = null
         recordListener = null
+        tripRecorder = null
         unregisterFakeSignals = null
     }
 }

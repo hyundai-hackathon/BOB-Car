@@ -1,6 +1,5 @@
 package com.bobcar.vehicle.data
 
-import android.os.SystemClock
 import android.util.Log
 import androidx.room.withTransaction
 import com.bobcar.vehicle.driving.DrivingEvent
@@ -28,7 +27,7 @@ class DrivingRecorder(
 
     /** Event times are elapsedRealtime; convert to wall-clock right away. */
     fun record(event: DrivingEvent) {
-        val occurredAt = System.currentTimeMillis() - (SystemClock.elapsedRealtime() - event.at)
+        val occurredAt = WallClock.fromElapsed(event.at)
         val (type, detail) = typeAndDetail(event)
         scope.launch {
             try {
@@ -70,7 +69,8 @@ class DrivingRecorder(
         is DrivingEvent.EndCountdownStarted -> "EndCountdownStarted" to "countdownMs=${event.deadline - event.at}"
         is DrivingEvent.EndCountdownCancelled -> "EndCountdownCancelled" to "reason=${event.reason}"
         is DrivingEvent.TripEnded -> "TripEnded" to "reason=${event.reason}"
-        is DrivingEvent.AppResumed -> "AppResumed" to "state=${event.state::class.simpleName}"
+        is DrivingEvent.AppResumed ->
+            "AppResumed" to "state=${event.state::class.simpleName}${if (event.gearKnown) "" else " gear=unknown"}"
     }
 
     private companion object {

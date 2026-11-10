@@ -27,6 +27,13 @@ interface TripDao {
 
     @Query("SELECT COUNT(*) FROM trip")
     fun countFlow(): Flow<Int>
+
+    /** The running trip for the screen; null when none. */
+    @Query("SELECT * FROM trip WHERE status = 'ACTIVE' ORDER BY startedAt DESC LIMIT 1")
+    fun activeFlow(): Flow<TripEntity?>
+
+    @Query("SELECT * FROM trip WHERE status = 'ENDED' ORDER BY endedAt DESC LIMIT 1")
+    fun lastEndedFlow(): Flow<TripEntity?>
 }
 
 @Dao

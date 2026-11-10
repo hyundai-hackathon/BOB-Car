@@ -27,9 +27,25 @@ data class TripEntity(
     /** Cleared when the trip is PERSONAL (CLAUDE.md rule 6) */
     val destinationName: String? = null,
     val expectedTollFare: Int? = null,
-    /** COUNTDOWN, SEAT_EMPTY, DOOR_OPEN */
+    /** COUNTDOWN, SEAT_EMPTY, DOOR_OPEN, or APP_RESTART (found unfinished when the app came back) */
     val endReason: String? = null,
-)
+) {
+    companion object {
+        const val STATUS_ACTIVE = "ACTIVE"
+        const val STATUS_ENDED = "ENDED"
+        const val END_APP_RESTART = "APP_RESTART"
+    }
+}
+
+/**
+ * Distance on the instrument cluster odometer, end − start. null when either reading is missing
+ * or the odometer went backwards (the emulator resets it on restart, troubleshooting B8).
+ */
+fun TripEntity.distanceKm(): Float? {
+    val start = startOdometerKm ?: return null
+    val end = endOdometerKm ?: return null
+    return (end - start).takeIf { it >= 0f }
+}
 
 /** Battery and odometer at a point in time, compared later for charge and unrecorded-drive detection. */
 @Entity(tableName = "energy_snapshot", indices = [Index("takenAt")])
