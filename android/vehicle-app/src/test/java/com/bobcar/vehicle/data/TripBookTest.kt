@@ -166,6 +166,44 @@ class TripBookTest {
     }
 
     @Test
+    fun tripGetsTheCheckinDriverAndConfirmationClearsProvisional() = runTest {
+        val provisional = book.onTripStarted(
+            1_000, merged = false, reading(100f), TripBook.DriverChoice("drv-a", provisional = true),
+        )
+        assertEquals("drv-a", provisional.driverId)
+        assertEquals(true, provisional.driverProvisional)
+
+        val confirmed = book.onDriverConfirmed("drv-b")!!
+        assertEquals(provisional.id, confirmed.id)
+        assertEquals("drv-b", confirmed.driverId)
+        assertEquals(false, confirmed.driverProvisional)
+    }
+
+    @Test
+    fun confirmedDriverStaysConfirmedAndMergedTripKeepsItsDriver() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(100f), TripBook.DriverChoice("drv-a", provisional = false))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(110f))
+
+        val merged = book.onTripStarted(2_500, merged = true, reading(110f), TripBook.DriverChoice("drv-x", true))
+
+        assertEquals("drv-a", merged.driverId)
+        assertEquals(false, merged.driverProvisional)
+    }
+
+    @Test
+    fun driverConfirmedWithNoRunningTripChangesNothing() = runTest {
+        assertNull(book.onDriverConfirmed("drv-a"))
+    }
+
+    @Test
+    fun tripStartedOnResumeGetsTheGivenDriver() = runTest {
+        val trip = book.onAppResumed(5_000, drivingNow = true, reading(103f), TripBook.DriverChoice("drv-a", true))!!
+
+        assertEquals("drv-a", trip.driverId)
+        assertEquals(true, trip.driverProvisional)
+    }
+
+    @Test
     fun appResumedWithGearUnknownKeepsTheStoredTripOpen() = runTest {
         val trip = book.onTripStarted(1_000, merged = false, reading(100f))
 

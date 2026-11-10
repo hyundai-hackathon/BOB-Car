@@ -1,6 +1,8 @@
 package com.bobcar.vehicle.data
 
 import android.util.Log
+import com.bobcar.vehicle.checkin.DriverCheckin
+import com.bobcar.vehicle.checkin.DriverDefaults
 import com.bobcar.vehicle.driving.DrivingEvent
 import com.bobcar.vehicle.driving.DrivingState
 import com.bobcar.vehicle.signal.SignalEvent
@@ -17,11 +19,25 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Feeds [TripBook] from driving events (start, end, resume), navigation guidance and odometer values.
+ * Feeds [TripBook] from driving events (start, end, resume), navigation guidance and odometer values,
+ * and runs the driver check-in ([checkin]) that decides who the trip is recorded for:
+ * - Boarded (or resumed seated): new check-in with the default driver from [defaults]
+ * - driver confirmed: check-in confirmed; a running trip gets the driver too
+ * - CheckinClosed while unconfirmed: the default is recorded as provisional ([recordEvent])
+ * - TripStarted: the trip gets the check-in's driver
+ *
  * Readings are taken from the signal snapshot on the signal thread when the event happens, then
- * written one at a time in arrival order. Logs mask the destination (CLAUDE.md rule 6).
+ * everything is written one at a time in arrival order (so the check-in is always ready before the
+ * trip starts). Logs mask the destination (CLAUDE.md rule 6); driver IDs are app-made.
  */
-class TripRecorder(db: BobCarDatabase, private val signals: VehicleSignals) {
+class TripRecorder(
+    private val db: BobCarDatabase,
+    private val signals: VehicleSignals,
+    private val checkin: DriverCheckin,
+    private val defaults: DriverDefaults,
+    /** Stores a vehicle event (type, detail, wall-clock time) with its upload entry. */
+    private val recordEvent: (String, String?, Long) -> Unit = { _, _, _ -> },
+) {
 
     private val book = TripBook(db)
 
@@ -34,8 +50,10 @@ class TripRecorder(db: BobCarDatabase, private val signals: VehicleSignals) {
         val reading = TripBook.Reading(snapshot.odometerKm, snapshot.socPercent)
         val at = WallClock.fromElapsed(event.at)
         when (event) {
+            is DrivingEvent.Boarded -> write("check-in") { startCheckin(at) }
+            is DrivingEvent.CheckinClosed -> write("check-in close") { closeCheckin(at) }
             is DrivingEvent.TripStarted -> write("trip start") {
-                val trip = book.onTripStarted(at, event.mergedWithPrevious, reading)
+                val trip = book.onTripStarted(at, event.mergedWithPrevious, reading, checkinDriver())
                 Log.i(TAG, "trip #${trip.id} running${if (event.mergedWithPrevious) " (merged)" else ""} ${describe(trip)}")
             }
             is DrivingEvent.TripEnded -> write("trip end") {
@@ -44,9 +62,17 @@ class TripRecorder(db: BobCarDatabase, private val signals: VehicleSignals) {
                 else Log.i(TAG, "trip #${trip.id} ended (${trip.endReason}) ${describe(trip)}")
             }
             is DrivingEvent.AppResumed -> write("resume") {
+                // Seated without a trip: the driver card is due again. Not seated: nobody to check in.
+                when (event.state) {
+                    is DrivingState.CheckingIn -> if (checkin.current == null) startCheckin(at)
+                    DrivingState.Idle -> checkin.clear()
+                    else -> Unit
+                }
                 val drivingNow = if (!event.gearKnown) null
                 else event.state is DrivingState.Driving || event.state is DrivingState.EndCountdown
-                val trip = book.onAppResumed(at, drivingNow, reading)
+                // A trip started here was never checked in: default driver, provisional
+                val driver = if (drivingNow == true) defaults.resolve(at)?.let { TripBook.DriverChoice(it.driverId, true) } else null
+                val trip = book.onAppResumed(at, drivingNow, reading, driver)
                 Log.i(TAG, "resume drivingNow=$drivingNow trip=${trip?.let { "#${it.id} ${it.status} ${describe(it)}" } ?: "none"}")
             }
             else -> Unit
@@ -65,6 +91,8 @@ class TripRecorder(db: BobCarDatabase, private val signals: VehicleSignals) {
     }
 
     fun start() {
+        // Mock drivers and today's reservation first, so the first check-in can find a default
+        write("mock data") { Log.i(TAG, "local mock data: ${LocalMockData.seed(db, System.currentTimeMillis())}") }
         signals.addListener(onSignal)
         // Odometer, including its first value (which produces no SignalEvent), for a start reading that was missing
         scope.launch {
@@ -76,9 +104,52 @@ class TripRecorder(db: BobCarDatabase, private val signals: VehicleSignals) {
         }
     }
 
+    /** The driver card was answered (or [다른 사람] chosen). Unknown or inactive IDs are ignored. */
+    fun confirmDriver(driverId: String) = write("driver confirm") {
+        if (db.driverDao().getActiveById(driverId) == null) {
+            Log.w(TAG, "driver confirm ignored: $driverId is not an active driver")
+            return@write
+        }
+        val at = System.currentTimeMillis()
+        val state = checkin.confirm(driverId)
+        val trip = book.onDriverConfirmed(driverId)
+        recordEvent(EVENT_DRIVER_CONFIRMED, "driver=$driverId", at)
+        Log.i(TAG, "driver confirmed: $driverId (check-in=${state != null}, trip=${trip?.id ?: "none"})")
+    }
+
+    /** Debug: the mock reservation covering now is replaced (driver ID) or removed (null). */
+    fun setReservationNow(driverId: String?) = write("reservation") {
+        LocalMockData.setReservationNow(db, System.currentTimeMillis(), driverId)
+        Log.i(TAG, "mock reservation now: ${driverId ?: "none"}")
+    }
+
     fun close() {
         signals.removeListener(onSignal)
         scope.cancel()
+    }
+
+    // ---------------------------------------------------------------- check-in (write queue)
+
+    private suspend fun startCheckin(at: Long) {
+        val default = defaults.resolve(at)
+        checkin.start(at, default)
+        Log.i(TAG, "check-in: default driver ${default?.let { "${it.driverId} (${it.source})" } ?: "none"}")
+    }
+
+    /** Card closes. Unconfirmed → the default is recorded as provisional (or that there is none). */
+    private suspend fun closeCheckin(at: Long) {
+        if (checkin.current == null) startCheckin(at) // e.g. drove off without a seat signal
+        val state = checkin.close() ?: return
+        if (!state.provisional) return
+        val detail = state.default?.let { "driver=${it.driverId} source=${it.source}" } ?: "driver=none"
+        recordEvent(EVENT_DRIVER_PROVISIONAL, detail, at)
+        Log.i(TAG, "check-in closed unconfirmed, provisional $detail")
+    }
+
+    private fun checkinDriver(): TripBook.DriverChoice? {
+        val state = checkin.current ?: return null
+        val id = state.driverId ?: return null
+        return TripBook.DriverChoice(id, state.provisional)
     }
 
     private fun write(what: String, block: suspend () -> Unit) {
@@ -93,9 +164,12 @@ class TripRecorder(db: BobCarDatabase, private val signals: VehicleSignals) {
 
     private fun describe(trip: TripEntity): String =
         "odo=${trip.startOdometerKm}→${trip.endOdometerKm} distance=${trip.distanceKm()} " +
-            "dest=${maskForLog(trip.destinationName)} toll=${trip.expectedTollFare}"
+            "dest=${maskForLog(trip.destinationName)} toll=${trip.expectedTollFare} " +
+            "driver=${trip.driverId ?: "none"}${if (trip.driverProvisional) " (provisional)" else ""}"
 
     private companion object {
         const val TAG = "BOBCar.Trip"
+        const val EVENT_DRIVER_PROVISIONAL = "DriverProvisional"
+        const val EVENT_DRIVER_CONFIRMED = "DriverConfirmed"
     }
 }

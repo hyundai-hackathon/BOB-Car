@@ -34,6 +34,10 @@ interface TripDao {
 
     @Query("SELECT * FROM trip WHERE status = 'ENDED' ORDER BY endedAt DESC LIMIT 1")
     fun lastEndedFlow(): Flow<TripEntity?>
+
+    /** The most recent trip that has a driver (confirmed or provisional): the previous driver. */
+    @Query("SELECT * FROM trip WHERE driverId IS NOT NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun getLastWithDriver(): TripEntity?
 }
 
 @Dao
@@ -73,6 +77,15 @@ interface DriverDao {
 
     @Query("SELECT * FROM driver WHERE active = 1 ORDER BY name")
     suspend fun getActive(): List<DriverEntity>
+
+    @Query("SELECT * FROM driver WHERE active = 1 ORDER BY name")
+    fun activeFlow(): Flow<List<DriverEntity>>
+
+    @Query("SELECT * FROM driver WHERE id = :id AND active = 1")
+    suspend fun getActiveById(id: String): DriverEntity?
+
+    @Query("SELECT COUNT(*) FROM driver")
+    suspend fun count(): Int
 }
 
 @Dao
@@ -83,6 +96,10 @@ interface ReservationDao {
     /** The reservation covering [at], if any (start inclusive, end exclusive). */
     @Query("SELECT * FROM reservation WHERE startAt <= :at AND :at < endAt ORDER BY startAt DESC LIMIT 1")
     suspend fun getAt(at: Long): ReservationEntity?
+
+    /** Removes the reservations covering [at] (debug: test the no-reservation case). */
+    @Query("DELETE FROM reservation WHERE startAt <= :at AND :at < endAt")
+    suspend fun deleteAt(at: Long): Int
 }
 
 @Dao

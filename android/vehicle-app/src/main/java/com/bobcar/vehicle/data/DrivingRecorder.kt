@@ -27,8 +27,12 @@ class DrivingRecorder(
 
     /** Event times are elapsedRealtime; convert to wall-clock right away. */
     fun record(event: DrivingEvent) {
-        val occurredAt = WallClock.fromElapsed(event.at)
         val (type, detail) = typeAndDetail(event)
+        record(type, detail, WallClock.fromElapsed(event.at))
+    }
+
+    /** Other vehicle events (e.g. driver provisional / confirmed). [occurredAt] is wall-clock. No personal data in [detail]. */
+    fun record(type: String, detail: String?, occurredAt: Long) {
         scope.launch {
             try {
                 db.withTransaction {
