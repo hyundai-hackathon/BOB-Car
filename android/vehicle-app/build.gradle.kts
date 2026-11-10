@@ -18,6 +18,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Upload server base URL. Empty until the server exists: records stay in the upload queue.
+        // Set it only for testing, e.g. ./gradlew installDebug -Pbobcar.serverUrl=http://10.0.2.2:8787
+        // String.valueOf keeps it from being a compile-time constant: Kotlin would otherwise copy the old
+        // value into the classes that use it, and an incremental build would not pick up a new URL.
+        val serverUrl = providers.gradleProperty("bobcar.serverUrl").getOrElse("")
+        buildConfigField("String", "SERVER_URL", "String.valueOf(\"$serverUrl\")")
     }
 
     buildTypes {
@@ -57,6 +64,8 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    // Upload queue: sends when the network is up, retries with backoff
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

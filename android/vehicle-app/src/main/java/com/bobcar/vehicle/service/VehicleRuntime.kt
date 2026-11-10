@@ -13,6 +13,7 @@ import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.NaviGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.upload.UploadScheduler
 
 /**
  * Everything that collects and records vehicle data, owned by [CollectionService] (one per process).
@@ -46,12 +47,14 @@ object VehicleRuntime {
         started = true
         val app = context.applicationContext
 
-        val rec = DrivingRecorder(BobCarDatabase.get(app))
+        val rec = DrivingRecorder(BobCarDatabase.get(app)) { UploadScheduler.request(app) }
         val listener: (DrivingEvent) -> Unit = rec::record
         recorder = rec
         recordListener = listener
         monitor.addEventListener(listener)
         monitor.start()
+        // Send what piled up while the app or the server was off
+        UploadScheduler.request(app)
 
         val v = VehicleGateway(app).also { vehicle = it }
         val c = CarPropertyGateway(app).also { carProperty = it }

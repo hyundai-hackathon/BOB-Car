@@ -87,6 +87,10 @@ interface UploadQueueDao {
     @Query("SELECT * FROM upload_queue WHERE sentAt IS NULL ORDER BY id LIMIT :limit")
     suspend fun getPending(limit: Int): List<UploadQueueEntity>
 
+    /** Unsent items to send now: oldest first, skipping ones the server refused [maxAttempts] times. */
+    @Query("SELECT * FROM upload_queue WHERE sentAt IS NULL AND attempts < :maxAttempts ORDER BY id LIMIT :limit")
+    suspend fun getSendable(limit: Int, maxAttempts: Int): List<UploadQueueEntity>
+
     @Query("UPDATE upload_queue SET sentAt = :sentAt WHERE id IN (:ids)")
     suspend fun markSent(ids: List<Long>, sentAt: Long)
 

@@ -15,9 +15,13 @@ import org.json.JSONObject
 /**
  * Stores every driving event in the local DB and adds it to the upload queue in the same transaction,
  * so a record is never kept without its upload entry (works with the server off, CLAUDE.md rule 8).
- * Writes run one at a time in arrival order.
+ * Writes run one at a time in arrival order. [onStored] runs after each successful write
+ * (used to request an upload).
  */
-class DrivingRecorder(private val db: BobCarDatabase) {
+class DrivingRecorder(
+    private val db: BobCarDatabase,
+    private val onStored: () -> Unit = {},
+) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
@@ -49,7 +53,9 @@ class DrivingRecorder(private val db: BobCarDatabase) {
                 Log.d(TAG, "stored $type")
             } catch (e: Exception) {
                 Log.e(TAG, "store $type failed", e)
+                return@launch
             }
+            onStored()
         }
     }
 

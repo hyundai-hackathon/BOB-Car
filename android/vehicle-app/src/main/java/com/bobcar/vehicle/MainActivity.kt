@@ -12,6 +12,7 @@ import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.service.CollectionService
 import com.bobcar.vehicle.service.VehicleRuntime
 import com.bobcar.vehicle.ui.DiagnosticScreen
+import com.bobcar.vehicle.upload.UploadStatus
 
 /**
  * Shows what the collection service sees. Collection itself runs in [CollectionService],
@@ -37,8 +38,9 @@ class MainActivity : ComponentActivity() {
             val fakeMode by signals.fakeModeFlow.collectAsState()
             val storedEventCount by storedEventCountFlow.collectAsState(initial = 0)
             val pendingUploadCount by pendingUploadCountFlow.collectAsState(initial = 0)
+            val upload by UploadStatus.state.collectAsState()
             MaterialTheme(colorScheme = darkColorScheme()) {
-                DiagnosticScreen(snapshot, state, recentEvents, fakeMode, storedEventCount, pendingUploadCount)
+                DiagnosticScreen(snapshot, state, recentEvents, fakeMode, storedEventCount, pendingUploadCount, upload)
             }
         }
     }
