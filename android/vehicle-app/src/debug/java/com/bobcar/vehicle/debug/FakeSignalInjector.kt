@@ -10,7 +10,10 @@ import androidx.core.content.ContextCompat
 import com.bobcar.vehicle.driving.DrivingMonitor
 import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
+import com.bobcar.vehicle.signal.RouteStart
+import com.bobcar.vehicle.signal.SignalEvent
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.util.maskForLog
 
 /**
  * Debug build only (src/debug). Accepts fake signals from adb and feeds them through the gateways'
@@ -24,6 +27,7 @@ import com.bobcar.vehicle.signal.VehicleSignals
  *   gear     P | R | N | D
  *   odometer <km>
  *   soc      <percent>
+ *   route    <tollFare>:<destination>   navigation guidance started (no spaces; e.g. 4700:Incheon-Airport)
  *   continue (no value)       [계속 운행]
  *   driver   <id>             driver confirmed (for trip merging)
  */
@@ -56,6 +60,7 @@ object FakeSignalInjector {
                     "gear" -> gearRaw(value)?.let { carProperty.injectGear(it) } != null
                     "odometer" -> value?.toFloatOrNull()?.let { vehicle.injectOdometer(it) } != null
                     "soc" -> value?.toIntOrNull()?.let { vehicle.injectSoc(it) } != null
+                    "route" -> route(signals, value)
                     "continue" -> true.also { monitor.onContinueTapped() }
                     "driver" -> value?.takeIf { it.isNotBlank() }?.let { monitor.onDriverConfirmed(it) } != null
                     else -> false
@@ -69,6 +74,22 @@ object FakeSignalInjector {
             context.unregisterReceiver(receiver)
             signals.setFakeMode(false)
         }
+    }
+
+    /** Publishes a RouteStarted the way NaviGateway does. Navigation is not muted by fake mode. */
+    private fun route(signals: VehicleSignals, value: String?): Boolean {
+        val parts = value?.split(':', limit = 2) ?: return false
+        val fare = parts[0].toIntOrNull() ?: return false
+        val name = parts.getOrElse(1) { "" }
+        signals.post {
+            val route = RouteStart(tollFare = fare, distanceMeters = 0, destinationName = name, at = signals.now())
+            signals.publish(
+                "routeStarted (fake) tollFare=$fare name=${maskForLog(name)}",
+                { it.copy(lastRouteStart = route) },
+                SignalEvent.RouteStarted(route),
+            )
+        }
+        return true
     }
 
     private fun bool(value: String?, yes: String, no: String): Boolean? = when (value) {

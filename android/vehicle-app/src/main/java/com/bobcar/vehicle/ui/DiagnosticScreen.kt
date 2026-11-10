@@ -25,6 +25,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.bobcar.vehicle.R
+import com.bobcar.vehicle.data.TripEntity
+import com.bobcar.vehicle.data.distanceKm
 import com.bobcar.vehicle.driving.DrivingState
 import com.bobcar.vehicle.signal.Gear
 import com.bobcar.vehicle.signal.VehicleSnapshot
@@ -47,6 +49,7 @@ fun DiagnosticScreen(
     storedEventCount: Int,
     pendingUploadCount: Int,
     upload: UploadStatus.State,
+    lastTrip: TripEntity?,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(32.dp)) {
@@ -79,6 +82,9 @@ fun DiagnosticScreen(
                     )
                     Text(uploadLabel(upload), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(16.dp))
+                    Text("마지막 운행", style = MaterialTheme.typography.titleMedium)
+                    Text(lastTripLabel(lastTrip), style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(16.dp))
                     Text("최근 이벤트", style = MaterialTheme.typography.titleMedium)
                     recentEvents.forEach {
                         Text(it, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium)
@@ -108,7 +114,7 @@ private fun stateLabel(state: DrivingState): String = when (state) {
 
 /** Remaining whole seconds until [deadline] (elapsedRealtime), refreshed on screen. */
 @Composable
-private fun remainingSeconds(deadline: Long): Long {
+internal fun remainingSeconds(deadline: Long): Long {
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(deadline) {
         while (true) {
@@ -117,6 +123,14 @@ private fun remainingSeconds(deadline: Long): Long {
         }
     }
     return ((deadline - now).coerceAtLeast(0) + 999) / 1000
+}
+
+private fun lastTripLabel(trip: TripEntity?): String {
+    if (trip == null) return "없음"
+    val time = "${TripFormat.clock(trip.startedAt)}–${trip.endedAt?.let(TripFormat::clock) ?: ""}"
+    val odo = "${TripFormat.km(trip.startOdometerKm)} → ${TripFormat.km(trip.endOdometerKm)}"
+    return "$time · $odo (${TripFormat.km(trip.distanceKm())})\n" +
+        "${TripFormat.destination(trip.destinationName)} · 통행료 ${TripFormat.toll(trip.expectedTollFare)} · 종료 ${trip.endReason}"
 }
 
 private fun uploadLabel(upload: UploadStatus.State): String {
@@ -156,6 +170,7 @@ private fun DiagnosticScreenPreview() {
             storedEventCount = 12,
             pendingUploadCount = 12,
             upload = UploadStatus.State(serverConfigured = false),
+            lastTrip = null,
         )
     }
 }
