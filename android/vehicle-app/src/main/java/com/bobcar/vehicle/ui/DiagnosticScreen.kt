@@ -28,7 +28,11 @@ import com.bobcar.vehicle.R
 import com.bobcar.vehicle.driving.DrivingState
 import com.bobcar.vehicle.signal.Gear
 import com.bobcar.vehicle.signal.VehicleSnapshot
+import com.bobcar.vehicle.upload.UploadStatus
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Read-only diagnostic screen: the six signals, the driving state and recent driving events.
@@ -40,6 +44,9 @@ fun DiagnosticScreen(
     state: DrivingState,
     recentEvents: List<String>,
     fakeMode: Boolean,
+    storedEventCount: Int,
+    pendingUploadCount: Int,
+    upload: UploadStatus.State,
 ) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(32.dp)) {
@@ -64,6 +71,13 @@ fun DiagnosticScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("운행 상태", style = MaterialTheme.typography.titleLarge)
                     Text(stateLabel(state), style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(16.dp))
+                    Text("기록", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "저장된 이벤트 ${storedEventCount}건 · 미전송 ${pendingUploadCount}건",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(uploadLabel(upload), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(16.dp))
                     Text("최근 이벤트", style = MaterialTheme.typography.titleMedium)
                     recentEvents.forEach {
@@ -105,6 +119,21 @@ private fun remainingSeconds(deadline: Long): Long {
     return ((deadline - now).coerceAtLeast(0) + 999) / 1000
 }
 
+private fun uploadLabel(upload: UploadStatus.State): String {
+    if (!upload.serverConfigured) return "서버: 미설정 (기록은 큐에 보관)"
+    val success = upload.lastSuccessAt
+    val failure = upload.lastFailureAt
+    return when {
+        failure != null && (success == null || failure > success) ->
+            "서버: 전송 실패 ${clock(failure)} (${upload.lastError}) · 다시 시도 예정"
+        success != null -> "서버: 마지막 전송 ${clock(success)} (${upload.lastSentCount}건)"
+        else -> "서버: 전송 대기"
+    }
+}
+
+private fun clock(wallMillis: Long): String =
+    SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(wallMillis))
+
 private fun gearLabel(gear: Gear): String = when (gear) {
     Gear.PARK -> "P"
     Gear.REVERSE -> "R"
@@ -124,6 +153,9 @@ private fun DiagnosticScreenPreview() {
             state = DrivingState.Driving(0, Gear.DRIVE),
             recentEvents = listOf("10:00:01 Boarded", "10:00:05 CheckinClosed (BRAKE_IN_PARK)", "10:00:08 TripStarted"),
             fakeMode = false,
+            storedEventCount = 12,
+            pendingUploadCount = 12,
+            upload = UploadStatus.State(serverConfigured = false),
         )
     }
 }

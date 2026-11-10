@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -17,6 +18,13 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Upload server base URL. Empty until the server exists: records stay in the upload queue.
+        // Set it only for testing, e.g. ./gradlew installDebug -Pbobcar.serverUrl=http://10.0.2.2:8787
+        // String.valueOf keeps it from being a compile-time constant: Kotlin would otherwise copy the old
+        // value into the classes that use it, and an incremental build would not pick up a new URL.
+        val serverUrl = providers.gradleProperty("bobcar.serverUrl").getOrElse("")
+        buildConfigField("String", "SERVER_URL", "String.valueOf(\"$serverUrl\")")
     }
 
     buildTypes {
@@ -39,6 +47,10 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        // Robolectric (Room DAO tests on the JVM)
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -48,6 +60,12 @@ dependencies {
     implementation(libs.kotlin.reflect)
     // StateFlow for the signal snapshot (same version the SDK and lifecycle already resolve to)
     implementation(libs.kotlinx.coroutines.android)
+    // Local DB (records first, upload queue later)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    // Upload queue: sends when the network is up, retries with backoff
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -58,6 +76,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
