@@ -51,6 +51,13 @@ interface EnergySnapshotDao {
 
     @Query("SELECT * FROM energy_snapshot WHERE kind = :kind ORDER BY takenAt DESC LIMIT 1")
     suspend fun getLatest(kind: String): EnergySnapshotEntity?
+
+    /** The snapshot stored last, of any kind: what the next snapshot is compared against. */
+    @Query("SELECT * FROM energy_snapshot ORDER BY id DESC LIMIT 1")
+    suspend fun getLast(): EnergySnapshotEntity?
+
+    @Query("SELECT COUNT(*) FROM energy_snapshot")
+    suspend fun count(): Int
 }
 
 @Dao

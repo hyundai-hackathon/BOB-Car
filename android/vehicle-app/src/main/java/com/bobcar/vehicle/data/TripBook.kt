@@ -10,7 +10,7 @@ import com.bobcar.vehicle.trip.Purpose
 class TripBook(private val db: BobCarDatabase) {
 
     /** Odometer and battery at the moment of an event. */
-    data class Reading(val odometerKm: Float?, val socPercent: Int?)
+    data class Reading(val odometerKm: Float?, val socPercent: Int?, val batteryCapacityWh: Float? = null)
 
     /** What navigation guidance said when it started. */
     data class Route(val destinationName: String, val tollFare: Int)
@@ -109,8 +109,8 @@ class TripBook(private val db: BobCarDatabase) {
     }
 
     /**
-     * Ends the running trip with [outcome] (driver and purpose) and records the baseline the next driver
-     * is compared against.
+     * Ends the running trip with [outcome] (driver and purpose), records the baseline the next driver's
+     * briefing uses and the TRIP_END snapshot the next boarding or restart is compared against.
      */
     suspend fun onTripEnded(
         at: Long,
@@ -142,6 +142,17 @@ class TripBook(private val db: BobCarDatabase) {
                 activeTripId = null,
             )
         }
+        // What the next boarding or restart is compared against (charge, unrecorded drive)
+        db.energySnapshotDao().insert(
+            EnergySnapshotEntity(
+                kind = EnergySnapshotEntity.KIND_TRIP_END,
+                takenAt = at,
+                tripId = ended.id,
+                socPercent = reading.socPercent,
+                batteryCapacityWh = reading.batteryCapacityWh,
+                odometerKm = reading.odometerKm,
+            ),
+        )
         ended
     }
 

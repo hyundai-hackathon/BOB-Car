@@ -170,6 +170,27 @@ class TripBookTest {
     }
 
     @Test
+    fun endedTripLeavesATripEndSnapshot() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(12_340f, 80))
+        val ended = book.onTripEnded(2_000, "COUNTDOWN", TripBook.Reading(12_362f, 72, 77_400f))!!
+
+        val snapshot = db.energySnapshotDao().getLast()!!
+        assertEquals(EnergySnapshotEntity.KIND_TRIP_END, snapshot.kind)
+        assertEquals(2_000L, snapshot.takenAt)
+        assertEquals(ended.id, snapshot.tripId)
+        assertEquals(12_362f, snapshot.odometerKm)
+        assertEquals(72, snapshot.socPercent)
+        assertEquals(77_400f, snapshot.batteryCapacityWh)
+    }
+
+    @Test
+    fun tripEndWithNoRunningTripLeavesNoSnapshot() = runTest {
+        assertNull(book.onTripEnded(2_000, "COUNTDOWN", reading(100f)))
+
+        assertNull(db.energySnapshotDao().getLast())
+    }
+
+    @Test
     fun runningTripIsRememberedInTheBaseline() = runTest {
         val trip = book.onTripStarted(1_000, merged = false, reading(100f))
 

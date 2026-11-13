@@ -64,7 +64,7 @@ class TripRecorder(
     /** Register with DrivingMonitor.addEventListener. Called on the signal thread. */
     val onDrivingEvent: (DrivingEvent) -> Unit = { event ->
         val snapshot = signals.snapshot.value
-        val reading = TripBook.Reading(snapshot.odometerKm, snapshot.socPercent)
+        val reading = TripBook.Reading(snapshot.odometerKm, snapshot.socPercent, snapshot.batteryCapacityWh)
         val at = WallClock.fromElapsed(event.at)
         when (event) {
             is DrivingEvent.Boarded -> write("check-in") { startCheckin(at) }
