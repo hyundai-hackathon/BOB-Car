@@ -3,7 +3,7 @@ package com.bobcar.vehicle.signal
 /**
  * Timing and filter values for vehicle signals and trip detection, kept in one place so they can be
  * tuned without touching gateway or state machine code.
- * Basis: docs day1-check 2, 3, 5, design-review F5 and troubleshooting B1, B7, B8.
+ * Basis: BOB-Car-docs day1-check 2, 3, 5, design-review F5 and troubleshooting B1, B7, B8.
  */
 object SignalConfig {
     /** A gear value counts only after it stays this long (Pleos Gear passes through R on P→D, B1). */
