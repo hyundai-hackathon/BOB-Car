@@ -8,6 +8,8 @@ import { COL, db } from "./db";
  * the vehicle itself found (F4 "ChargeDetected": battery up between two snapshots).
  *
  * - A charge covers [snapshot before it - 10 min, moment it was found + 10 min] (A and B in the design).
+ *   Each payment belongs to one charge only (the one whose span contains it, else the nearest), so charges
+ *   close together (overlapping margins) do not share payments.
  * - Payments of that vehicle in the window are added up; expected amount = energy x unit price;
  *   ratio = expected / paid. At or above [RECONCILE.minRatio] the payments are explained.
  * - A payment with no charge around it, or one the charge does not explain, gets an OPEN flag. A flag is
@@ -52,11 +54,14 @@ export async function chargeOf(event: DocumentSnapshot): Promise<Charge | null> 
   return { eventId: event.id, vehicleId, gainedPercent: gained, kwh: numberIn(detail, "kwh"), since, foundAt };
 }
 
-/** A charge arrived: check every payment in its window again (they may now be explained). */
+/**
+ * A charge arrived: the payments in its window are judged again, and so are the charges whose windows
+ * overlap it (a payment may now belong to the new charge instead).
+ */
 export async function onChargeFound(charge: Charge): Promise<void> {
-  const payments = await paymentsIn(charge.vehicleId, "CHARGE", charge.since - RECONCILE.windowMarginMs, charge.foundAt + RECONCILE.windowMarginMs);
-  if (payments.length === 0) return;
-  await judge(charge, payments);
+  const context = await contextOf(charge.vehicleId, EVENT_CHARGE);
+  const overlapping = context.charges.filter((c) => windowStart(c) <= windowEnd(charge) && windowStart(charge) <= windowEnd(c));
+  for (const c of overlapping) await judgeCharge(c, context, "CHARGE");
 }
 
 /** A payment was added (or changed): flag it unless a charge around it explains it. */
@@ -69,10 +74,10 @@ export async function checkPayment(transactionId: string): Promise<FlagView | nu
   if (tx.get("canceled") === true) return resolveCanceled(tx);
   if ((tx.get("amount") as number) < RECONCILE.minAmount) return null;
 
-  const charge = await chargeAround(tx.get("vehicleId") as string, tx.get("paidAt") as number, checked.event);
+  const context = await contextOf(tx.get("vehicleId") as string, checked.event);
+  const charge = ownerOf(tx.get("paidAt") as number, context);
   if (charge) {
-    const payments = await paymentsIn(charge.vehicleId, category as CheckedCategory, charge.since - RECONCILE.windowMarginMs, charge.foundAt + RECONCILE.windowMarginMs);
-    await judge(charge, payments);
+    await judgeCharge(charge, context, category as CheckedCategory);
     return flagOf(transactionId);
   }
   return writeFlag(tx, {
@@ -159,19 +164,57 @@ async function writeFlag(tx: DocumentSnapshot, fields: Record<string, unknown> &
 
 // ---------------------------------------------------------------- lookups
 
-/** The latest charge of [vehicleId] whose window contains [paidAt]. */
-async function chargeAround(vehicleId: string, paidAt: number, eventType: string): Promise<Charge | null> {
-  if (eventType !== EVENT_CHARGE) return null;
+/** Every charge of [vehicleId] recorded as [eventType] (a handful per vehicle). */
+async function chargesOf(vehicleId: string, eventType: string): Promise<Charge[]> {
+  if (eventType !== EVENT_CHARGE) return [];
   const events = await db()
     .collection(COL.events)
     .where("vehicleId", "==", vehicleId)
     .where("type", "==", EVENT_CHARGE)
     .get();
-  const charges = (await Promise.all(events.docs.map(chargeOf)))
-    .filter((c): c is Charge => c !== null)
-    .filter((c) => paidAt >= c.since - RECONCILE.windowMarginMs && paidAt <= c.foundAt + RECONCILE.windowMarginMs)
-    .sort((a, b) => b.foundAt - a.foundAt);
-  return charges[0] ?? null;
+  return (await Promise.all(events.docs.map(chargeOf))).filter((c): c is Charge => c !== null);
+}
+
+const windowStart = (c: Charge) => c.since - RECONCILE.windowMarginMs;
+const windowEnd = (c: Charge) => c.foundAt + RECONCILE.windowMarginMs;
+
+/** What deciding a payment's charge needs: the vehicle's charges and its trip end times. */
+interface Context {
+  charges: Charge[];
+  tripEnds: number[];
+}
+
+async function contextOf(vehicleId: string, eventType: string): Promise<Context> {
+  const [charges, trips] = await Promise.all([
+    chargesOf(vehicleId, eventType),
+    db().collection(COL.trips).where("vehicleId", "==", vehicleId).orderBy("startedAt", "desc").limit(50).get(),
+  ]);
+  const tripEnds = trips.docs.map((d) => d.get("endedAt")).filter((t): t is number => typeof t === "number");
+  return { charges, tripEnds };
+}
+
+/**
+ * The one charge a payment at [paidAt] belongs to. Windows of charges close together overlap by their
+ * margins, so a payment goes to the charge whose own span (snapshot to discovery) contains it, else the
+ * nearest one; a tie goes to the later charge. A payment after a charge was found does not belong to it
+ * when the car finished another trip in between (it was parked again somewhere else).
+ * null when no charge fits.
+ */
+function ownerOf(paidAt: number, context: Context): Charge | null {
+  const distance = (c: Charge) => (paidAt < c.since ? c.since - paidAt : paidAt > c.foundAt ? paidAt - c.foundAt : 0);
+  const droveAgain = (c: Charge) => paidAt > c.foundAt && context.tripEnds.some((t) => t > c.foundAt && t <= paidAt);
+  return (
+    context.charges
+      .filter((c) => paidAt >= windowStart(c) && paidAt <= windowEnd(c) && !droveAgain(c))
+      .sort((a, b) => distance(a) - distance(b) || b.foundAt - a.foundAt)[0] ?? null
+  );
+}
+
+/** Judges the payments that belong to [charge] (none: nothing to do). */
+async function judgeCharge(charge: Charge, context: Context, category: CheckedCategory): Promise<void> {
+  const inWindow = await paymentsIn(charge.vehicleId, category, windowStart(charge), windowEnd(charge));
+  const own = inWindow.filter((p) => ownerOf(p.get("paidAt") as number, context)?.eventId === charge.eventId);
+  if (own.length > 0) await judge(charge, own);
 }
 
 /** Checked, not cancelled payments of [vehicleId] in [from, to], oldest first. */
@@ -242,11 +285,9 @@ export async function cancelPayment(transactionId: string, now: number): Promise
   const flag = await checkPayment(transactionId);
   const category = tx.get("category") as string;
   if (category in CHECKED) {
-    const charge = await chargeAround(tx.get("vehicleId") as string, tx.get("paidAt") as number, CHECKED[category as CheckedCategory].event);
-    if (charge) {
-      const rest = await paymentsIn(charge.vehicleId, category as CheckedCategory, charge.since - RECONCILE.windowMarginMs, charge.foundAt + RECONCILE.windowMarginMs);
-      if (rest.length > 0) await judge(charge, rest);
-    }
+    const context = await contextOf(tx.get("vehicleId") as string, CHECKED[category as CheckedCategory].event);
+    const charge = ownerOf(tx.get("paidAt") as number, context);
+    if (charge) await judgeCharge(charge, context, category as CheckedCategory);
   }
   logger.info("payment cancelled", { transactionId });
   return flag;

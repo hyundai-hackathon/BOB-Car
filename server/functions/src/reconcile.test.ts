@@ -153,6 +153,22 @@ describe("matching rules", () => {
     expect(await flag(paid.transactionId)).toMatchObject({ status: "RESOLVED", expectedAmount: 12_191 });
   });
 
+  it("the scene repeated within 10 minutes: each payment stays with its own charge", async () => {
+    // First scene: trip end at A, payment, charge found at A + 5 min
+    const first = await pay(12_000, A + 2 * MIN);
+    await chargeFound({ sinceAt: A, foundAt: A + 5 * MIN });
+    // Second scene 3 minutes later: trip end at A + 8 min, payment, charge found at A + 12 min
+    await db().collection(COL.trips).doc(`${VEHICLE}_2`).set({ vehicleId: VEHICLE, tripId: 2, status: "ENDED", startedAt: A + 6 * MIN, endedAt: A + 8 * MIN, driverId: "drv-001" });
+    const second = await pay(12_000, A + 9 * MIN);
+    // The car drove again after the first charge was found: not that charge's payment
+    expect(second.flag).toMatchObject({ status: "OPEN", reason: "NO_CHARGE" });
+    expect(await flag(first.transactionId)).toMatchObject({ status: "RESOLVED" });
+    await chargeFound({ sinceAt: A + 8 * MIN, foundAt: A + 12 * MIN });
+
+    expect(await flag(first.transactionId)).toMatchObject({ status: "RESOLVED", windowPaidTotal: 12_000 });
+    expect(await flag(second.transactionId)).toMatchObject({ status: "RESOLVED", windowPaidTotal: 12_000 });
+  });
+
   it("a refuel payment with no refuel record is flagged (the emulator car is electric)", async () => {
     expect((await pay(62_000, A + 30 * MIN, "FUEL")).flag).toMatchObject({ kind: "FUEL_PAYMENT", status: "OPEN", note: "주유 기록 없음" });
   });
