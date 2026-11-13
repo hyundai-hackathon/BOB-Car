@@ -11,6 +11,20 @@ data class RouteStart(
     val at: Long,
 )
 
+/**
+ * A place from navigation (guidance destination or bookmark), used to suggest the trip purpose.
+ * Coordinates are for comparison only: never stored in the DB or logged (personal data).
+ */
+data class NaviPlace(
+    val name: String,
+    val poiId: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+/** The driver's navigation bookmarks HOME and OFFICE; null when that one is not set. */
+data class CommutePlaces(val home: NaviPlace?, val office: NaviPlace?)
+
 /** Latest cleaned value of every signal. null = not received yet. */
 data class VehicleSnapshot(
     val driverSeatOccupied: Boolean? = null,
@@ -21,6 +35,10 @@ data class VehicleSnapshot(
     val socPercent: Int? = null,
     val batteryCapacityWh: Float? = null,
     val lastRouteStart: RouteStart? = null,
+    /** Details (poiId, coordinates) of the latest guidance destination. Empty answers keep the previous one. */
+    val destinationPlace: NaviPlace? = null,
+    /** Navigation bookmarks HOME and OFFICE. null = not read yet. Re-read at every trip start (no change event, day1-check 14-5). */
+    val commutePlaces: CommutePlaces? = null,
 ) {
     /** Remaining battery energy = SoC × capacity (the console's Energy slider is not used, B10). */
     val batteryEnergyWh: Float?

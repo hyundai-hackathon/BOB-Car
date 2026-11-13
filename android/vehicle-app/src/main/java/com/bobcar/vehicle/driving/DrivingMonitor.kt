@@ -64,9 +64,23 @@ class DrivingMonitor(private val signals: VehicleSignals) {
         signals.handler.removeCallbacks(resumeOnFirstGear)
     }
 
-    /** [계속 운행]. The countdown card comes with the trip-end screen; for now this is reached via fake signals. */
+    /** [계속 운행] on the trip-end card. */
     fun onContinueTapped() = signals.post {
         machine.onContinueTapped(signals.now())
+        afterChange()
+    }
+
+    /** The driver list opened on the trip-end card: the countdown waits. */
+    fun pauseEndCountdown() = signals.post {
+        machine.onEndCountdownPaused()
+        Log.i(TAG, "end countdown paused (driver list)")
+        afterChange()
+    }
+
+    /** The driver list closed: the countdown starts again from the full time. */
+    fun resumeEndCountdown() = signals.post {
+        machine.onEndCountdownResumed(signals.now())
+        Log.i(TAG, "end countdown resumed")
         afterChange()
     }
 
@@ -111,7 +125,7 @@ class DrivingMonitor(private val signals: VehicleSignals) {
         val current = machine.state
         _state.value = current
         signals.handler.removeCallbacks(countdownTick)
-        if (current is DrivingState.EndCountdown) {
+        if (current is DrivingState.EndCountdown && !current.paused) {
             val delay = (current.deadline - signals.now()).coerceAtLeast(0)
             signals.handler.postDelayed(countdownTick, delay)
         }

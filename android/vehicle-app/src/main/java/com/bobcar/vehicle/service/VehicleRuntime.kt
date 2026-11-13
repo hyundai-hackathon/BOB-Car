@@ -17,6 +17,8 @@ import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.NaviGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.trip.Purpose
+import com.bobcar.vehicle.trip.TripEndChoices
 import com.bobcar.vehicle.upload.UploadScheduler
 
 /**
@@ -36,6 +38,9 @@ object VehicleRuntime {
     /** The driver now checked in (for the driver card). */
     val checkin = DriverCheckin()
 
+    /** Driver and purpose on the trip-end card. */
+    val tripEnd = TripEndChoices()
+
     /** SDK registration blocks for ~1 s while the services bind, so it runs off the main thread. */
     private val initThread = HandlerThread("bobcar-init").apply { start() }
     private val initHandler = Handler(initThread.looper)
@@ -46,6 +51,7 @@ object VehicleRuntime {
     private var navi: NaviGateway? = null
     private var recorder: DrivingRecorder? = null
     private var recordListener: ((DrivingEvent) -> Unit)? = null
+    private var naviRefreshListener: ((DrivingEvent) -> Unit)? = null
     private var tripRecorder: TripRecorder? = null
     private var unregisterFakeSignals: (() -> Unit)? = null
 
@@ -64,7 +70,7 @@ object VehicleRuntime {
         monitor.addEventListener(listener)
         // Trip rows (logbook): registered before monitor.start so the first AppResumed is seen
         val trips = TripRecorder(
-            db, signals, checkin, DriverDefaults(db),
+            db, signals, checkin, DriverDefaults(db), tripEnd,
             recordEvent = rec::record,
             recordConsent = rec::recordConsent,
             assignDriver = rec::assignDriver,
@@ -78,11 +84,16 @@ object VehicleRuntime {
         val v = VehicleGateway(app).also { vehicle = it }
         val c = CarPropertyGateway(app).also { carProperty = it }
         val n = NaviGateway(app).also { navi = it }
+        // Bookmarks have no change event: read them again on every trip start (purpose suggestion)
+        val bookmarkRefresh: (DrivingEvent) -> Unit = { if (it is DrivingEvent.TripStarted) n.refreshBookmarks() }
+        naviRefreshListener = bookmarkRefresh
+        monitor.addEventListener(bookmarkRefresh)
         val hooks = FakeHooks(
             continueTapped = monitor::onContinueTapped,
             confirmDriver = ::confirmDriver,
             setReservation = trips::setReservationNow,
             resetConsent = trips::resetConsent,
+            choosePurpose = ::choosePurpose,
         )
         unregisterFakeSignals = FakeSignalInjector.register(app, signals, v, c, hooks)
 
@@ -101,6 +112,32 @@ object VehicleRuntime {
         tripRecorder?.confirmDriver(driverId)
     }
 
+    /** A purpose tapped on the trip-end card. */
+    fun choosePurpose(purpose: Purpose) {
+        tripRecorder?.choosePurpose(purpose)
+    }
+
+    /** [계속 운행] on the trip-end card. */
+    fun continueTrip() {
+        monitor.onContinueTapped()
+    }
+
+    /** [변경] on the trip-end card: the driver list opens and the countdown waits. */
+    fun openEndDriverList() {
+        monitor.pauseEndCountdown()
+    }
+
+    /** [뒤로] on that driver list: back to the card, the countdown starts again. */
+    fun closeEndDriverList() {
+        monitor.resumeEndCountdown()
+    }
+
+    /** A driver picked on that list: confirmed for the trip, back to the card. */
+    fun pickEndDriver(driverId: String) {
+        confirmDriver(driverId)
+        monitor.resumeEndCountdown()
+    }
+
     /** Consent card answered by [driverId]: [동의] (agreed) or [나중에]. */
     fun answerConsent(driverId: String, agreed: Boolean) {
         tripRecorder?.answerConsent(driverId, agreed)
@@ -113,6 +150,7 @@ object VehicleRuntime {
         unregisterFakeSignals?.invoke()
         monitor.stop()
         recordListener?.let { monitor.removeEventListener(it) }
+        naviRefreshListener?.let { monitor.removeEventListener(it) }
         tripRecorder?.let { monitor.removeEventListener(it.onDrivingEvent) }
         val v = vehicle
         val c = carProperty
@@ -132,6 +170,7 @@ object VehicleRuntime {
         navi = null
         recorder = null
         recordListener = null
+        naviRefreshListener = null
         tripRecorder = null
         unregisterFakeSignals = null
     }

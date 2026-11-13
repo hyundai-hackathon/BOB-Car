@@ -147,7 +147,7 @@ private fun Confirmed(name: String, onOther: () -> Unit) {
 
 /** V4: pick the driver from the list, two columns. */
 @Composable
-private fun DriverList(
+internal fun DriverList(
     drivers: List<DriverEntity>,
     current: String?,
     default: DefaultDriver?,

@@ -6,8 +6,13 @@ import com.bobcar.vehicle.checkin.DriverCheckin
 import com.bobcar.vehicle.checkin.DriverDefaults
 import com.bobcar.vehicle.driving.DrivingEvent
 import com.bobcar.vehicle.driving.DrivingState
+import com.bobcar.vehicle.signal.NaviPlace
 import com.bobcar.vehicle.signal.SignalEvent
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.trip.EndChoice
+import com.bobcar.vehicle.trip.Purpose
+import com.bobcar.vehicle.trip.PurposeDefaults
+import com.bobcar.vehicle.trip.TripEndChoices
 import com.bobcar.vehicle.util.maskForLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +31,9 @@ import kotlinx.coroutines.launch
  * - driver confirmed: check-in confirmed; a running trip gets the driver too
  * - CheckinClosed while unconfirmed: the default is recorded as provisional ([recordEvent])
  * - TripStarted: the trip gets the check-in's driver
+ * - EndCountdownStarted: the trip-end card gets the suggested driver and purpose ([endChoices], PurposeDefaults)
+ * - TripEnded: the trip is saved with the card's answer, or the suggestion as provisional; a PERSONAL trip
+ *   loses its destination
  * - consent card answered: stored per driver (records of drivers who did not agree stay on the device)
  * - check-in started or confirmed: unsent records of this stay in the seat follow that driver ([assignDriver])
  *
@@ -38,6 +46,8 @@ class TripRecorder(
     private val signals: VehicleSignals,
     private val checkin: DriverCheckin,
     private val defaults: DriverDefaults,
+    /** The trip-end card's driver and purpose (the screen observes it). */
+    private val endChoices: TripEndChoices = TripEndChoices(),
     /** Stores a vehicle event (type, detail, wall-clock time) with its upload entry. */
     private val recordEvent: (String, String?, Long) -> Unit = { _, _, _ -> },
     /** Stores a driver's consent (driver ID, detail, wall-clock time) as that driver's upload entry. */
@@ -63,10 +73,18 @@ class TripRecorder(
                 val trip = book.onTripStarted(at, event.mergedWithPrevious, reading, checkinDriver())
                 Log.i(TAG, "trip #${trip.id} running${if (event.mergedWithPrevious) " (merged)" else ""} ${describe(trip)}")
             }
+            is DrivingEvent.EndCountdownStarted -> write("end card") { prepareEndChoice() }
             is DrivingEvent.TripEnded -> write("trip end") {
-                val trip = book.onTripEnded(at, event.reason.name, reading)
-                if (trip == null) Log.w(TAG, "trip end (${event.reason}) with no running trip")
-                else Log.i(TAG, "trip #${trip.id} ended (${trip.endReason}) ${describe(trip)}")
+                val active = db.tripDao().getActive()
+                val outcome = active?.let { endOutcome(it) }
+                val trip = book.onTripEnded(at, event.reason.name, reading, outcome)
+                endChoices.clear()
+                if (trip == null) {
+                    Log.w(TAG, "trip end (${event.reason}) with no running trip")
+                } else {
+                    recordPurpose(trip, at)
+                    Log.i(TAG, "trip #${trip.id} ended (${trip.endReason}) ${describe(trip)}")
+                }
             }
             is DrivingEvent.AppResumed -> write("resume") {
                 // Seated without a trip: the driver card is due again. Not seated: nobody to check in.
@@ -79,7 +97,10 @@ class TripRecorder(
                 else event.state is DrivingState.Driving || event.state is DrivingState.EndCountdown
                 // A trip started here was never checked in: default driver, provisional
                 val driver = if (drivingNow == true) defaults.resolve(at)?.let { TripBook.DriverChoice(it.driverId, true) } else null
-                val trip = book.onAppResumed(at, drivingNow, reading, driver)
+                // A trip closed here never showed its end card: the suggestion, provisional
+                val closing = if (drivingNow == false) db.tripDao().getActive() else null
+                val trip = book.onAppResumed(at, drivingNow, reading, driver, closing?.let { endOutcome(it) })
+                if (closing != null && trip != null) recordPurpose(trip, at)
                 Log.i(TAG, "resume drivingNow=$drivingNow trip=${trip?.let { "#${it.id} ${it.status} ${describe(it)}" } ?: "none"}")
             }
             else -> Unit
@@ -121,8 +142,17 @@ class TripRecorder(
         val state = checkin.confirm(driverId)
         state?.let { assignDriver(it.boardedAt - ASSIGN_MARGIN_MS, driverId) }
         val trip = book.onDriverConfirmed(driverId)
+        // Chosen with [변경] on the trip-end card (or the driver card while it is up): the card shows it
+        if (trip != null && endChoices.current?.tripId == trip.id) endChoices.chooseDriver(driverId)
         recordEvent(EVENT_DRIVER_CONFIRMED, "driver=$driverId", at)
         Log.i(TAG, "driver confirmed: $driverId (check-in=${state != null}, trip=${trip?.id ?: "none"})")
+    }
+
+    /** A purpose was tapped on the trip-end card. Ignored when no card is up. */
+    fun choosePurpose(purpose: Purpose) = write("purpose") {
+        val choice = endChoices.choosePurpose(purpose)
+        if (choice == null) Log.w(TAG, "purpose $purpose ignored: no trip-end card")
+        else Log.i(TAG, "purpose chosen: $purpose (trip #${choice.tripId}, driver=${choice.driverId ?: "none"})")
     }
 
     /**
@@ -181,6 +211,73 @@ class TripRecorder(
         Log.i(TAG, "check-in closed unconfirmed, provisional $detail")
     }
 
+    // ---------------------------------------------------------------- trip end (write queue)
+
+    /**
+     * End countdown started: the card shows the suggested driver and purpose. A card already answered
+     * for this trip (countdown cancelled, then P again) keeps its answer.
+     */
+    private suspend fun prepareEndChoice() {
+        val trip = db.tripDao().getActive() ?: return
+        val existing = endChoices.current
+        if (existing != null && existing.tripId == trip.id && existing.answered) return
+        val choice = suggestEndChoice(trip)
+        endChoices.set(choice)
+        Log.i(
+            TAG,
+            "end card: trip #${trip.id} driver=${choice.driverId ?: "none"} purpose=${choice.purpose} (${choice.purposeSource})",
+        )
+    }
+
+    private suspend fun suggestEndChoice(trip: TripEntity): EndChoice {
+        val driverId = trip.driverId ?: checkin.current?.driverId
+        val commute = signals.snapshot.value.commutePlaces
+        val suggestion = PurposeDefaults.resolve(
+            destination = destinationOf(trip),
+            home = commute?.home,
+            office = commute?.office,
+            lastPurpose = db.tripDao().getLastEndedWithPurpose()?.purpose?.let(::purposeOf),
+        )
+        return EndChoice(
+            tripId = trip.id,
+            driverId = driverId,
+            driverConfirmed = trip.driverId != null && !trip.driverProvisional,
+            purpose = suggestion.purpose,
+            purposeSource = suggestion.source,
+        )
+    }
+
+    /** The trip's destination, with poiId and coordinates when navigation sent them for the same place. */
+    private fun destinationOf(trip: TripEntity): NaviPlace? {
+        val name = trip.destinationName ?: return null
+        val byName = NaviPlace(name)
+        val detailed = signals.snapshot.value.destinationPlace
+        return if (detailed != null && PurposeDefaults.samePlace(byName, detailed)) detailed else byName
+    }
+
+    /** What [trip] is saved with: the card's answer, else the suggestion (provisional). */
+    private suspend fun endOutcome(trip: TripEntity): TripBook.EndOutcome {
+        val choice = endChoices.current?.takeIf { it.tripId == trip.id } ?: suggestEndChoice(trip)
+        return TripBook.EndOutcome(
+            driverId = choice.driverId,
+            driverProvisional = !choice.driverConfirmed,
+            purpose = choice.purpose,
+            purposeProvisional = !choice.answered,
+        )
+    }
+
+    /** For the server: purpose and driver of the ended trip. Never the destination. */
+    private fun recordPurpose(trip: TripEntity, at: Long) {
+        recordEvent(
+            EVENT_TRIP_PURPOSE,
+            "trip=${trip.id} purpose=${trip.purpose} purposeProvisional=${trip.purposeProvisional} " +
+                "driver=${trip.driverId ?: "none"} driverProvisional=${trip.driverProvisional}",
+            at,
+        )
+    }
+
+    private fun purposeOf(name: String): Purpose? = Purpose.entries.firstOrNull { it.name == name }
+
     private fun checkinDriver(): TripBook.DriverChoice? {
         val state = checkin.current ?: return null
         val id = state.driverId ?: return null
@@ -200,12 +297,14 @@ class TripRecorder(
     private fun describe(trip: TripEntity): String =
         "odo=${trip.startOdometerKm}→${trip.endOdometerKm} distance=${trip.distanceKm()} " +
             "dest=${maskForLog(trip.destinationName)} toll=${trip.expectedTollFare} " +
-            "driver=${trip.driverId ?: "none"}${if (trip.driverProvisional) " (provisional)" else ""}"
+            "driver=${trip.driverId ?: "none"}${if (trip.driverProvisional) " (provisional)" else ""} " +
+            "purpose=${trip.purpose ?: "none"}${if (trip.purpose != null && trip.purposeProvisional) " (provisional)" else ""}"
 
     private companion object {
         const val TAG = "BOBCar.Trip"
         const val EVENT_DRIVER_PROVISIONAL = "DriverProvisional"
         const val EVENT_DRIVER_CONFIRMED = "DriverConfirmed"
+        const val EVENT_TRIP_PURPOSE = "TripPurpose"
 
         /**
          * Boarding time and queue entry times come from separate clock reads; this margin keeps the stay's

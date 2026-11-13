@@ -128,6 +128,53 @@ class DrivingStateMachineTest {
         assertTrue(events.none { it is DrivingEvent.TripEnded })
     }
 
+    @Test
+    fun countdownWaitsWhileTheDriverListIsOpenAndRestartsInFull() {
+        val parkedAt = driveAndPark(0)
+        machine.onEndCountdownPaused()
+        machine.onTick(parkedAt + COUNTDOWN * 5)
+        assertTrue(events.none { it is DrivingEvent.TripEnded })
+        assertTrue((machine.state as DrivingState.EndCountdown).paused)
+
+        val closedAt = parkedAt + 40_000
+        machine.onEndCountdownResumed(closedAt)
+        assertEquals(DrivingState.EndCountdown(2_000, closedAt + COUNTDOWN), machine.state)
+
+        machine.onTick(closedAt + COUNTDOWN)
+        assertEquals(EndReason.COUNTDOWN, events.filterIsInstance<DrivingEvent.TripEnded>().single().reason)
+    }
+
+    @Test
+    fun seatEmptyWhileTheDriverListIsOpenStillEndsTheTrip() {
+        val parkedAt = driveAndPark(0)
+        machine.onEndCountdownPaused()
+        seat(parkedAt + 5_000, false)
+
+        assertEquals(EndReason.SEAT_EMPTY, events.filterIsInstance<DrivingEvent.TripEnded>().single().reason)
+    }
+
+    @Test
+    fun leavingParkWhileTheDriverListIsOpenCancelsTheCard() {
+        val parkedAt = driveAndPark(0)
+        machine.onEndCountdownPaused()
+        shift(parkedAt + 5_000, Gear.DRIVE)
+
+        assertEquals(CancelReason.GEAR_CHANGED, events.filterIsInstance<DrivingEvent.EndCountdownCancelled>().single().reason)
+        assertTrue(machine.state is DrivingState.Driving)
+    }
+
+    @Test
+    fun pauseAndResumeOutsideTheCountdownDoNothing() {
+        driveAndPark(0)
+        machine.onContinueTapped(61_000)
+        val before = machine.state
+
+        machine.onEndCountdownPaused()
+        machine.onEndCountdownResumed(62_000)
+
+        assertEquals(before, machine.state)
+    }
+
     // ---------------------------------------------------------------- exit detection
 
     @Test

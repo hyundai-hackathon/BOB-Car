@@ -1,6 +1,7 @@
 package com.bobcar.vehicle.data
 
 import androidx.room.withTransaction
+import com.bobcar.vehicle.trip.Purpose
 
 /**
  * Keeps the logbook's trip rows and the vehicle baseline in step with driving events.
@@ -16,6 +17,17 @@ class TripBook(private val db: BobCarDatabase) {
 
     /** Who drives: confirmed on the driver card, or the default recorded as provisional. */
     data class DriverChoice(val driverId: String, val provisional: Boolean)
+
+    /**
+     * Driver and purpose the trip is saved with when it ends (trip-end card answer, or the suggestion).
+     * [driverId] null keeps the trip's driver. A PERSONAL trip loses its destination (CLAUDE.md rule 6).
+     */
+    data class EndOutcome(
+        val driverId: String?,
+        val driverProvisional: Boolean,
+        val purpose: Purpose,
+        val purposeProvisional: Boolean,
+    )
 
     private val trips = db.tripDao()
     private val baselines = db.vehicleBaselineDao()
@@ -39,7 +51,8 @@ class TripBook(private val db: BobCarDatabase) {
         // Already running (e.g. app restarted mid-trip): keep it, never open a second one
         trips.getActive()?.let { return@withTransaction it }
 
-        val trip = (if (merged) reopenLastEnded() else null) ?: run {
+        // A continued trip takes guidance set up in P before leaving again (latest wins, like during a trip)
+        val trip = (if (merged) reopenLastEnded()?.let { withRoute(it, pendingRoute) } else null) ?: run {
             val route = pendingRoute
             val new = TripEntity(
                 status = TripEntity.STATUS_ACTIVE,
@@ -64,7 +77,13 @@ class TripBook(private val db: BobCarDatabase) {
             pendingRoute = route
             return null
         }
-        val updated = active.copy(
+        return withRoute(active, route)
+    }
+
+    /** Puts [route] on [trip] (destination and expected toll); unchanged when there is none. */
+    private suspend fun withRoute(trip: TripEntity, route: Route?): TripEntity {
+        if (route == null) return trip
+        val updated = trip.copy(
             destinationName = route.destinationName.takeIf { it.isNotBlank() },
             expectedTollFare = route.tollFare,
         )
@@ -89,11 +108,26 @@ class TripBook(private val db: BobCarDatabase) {
         return updated
     }
 
-    /** Ends the running trip and records the baseline the next driver is compared against. */
-    suspend fun onTripEnded(at: Long, reason: String, reading: Reading): TripEntity? = db.withTransaction {
+    /**
+     * Ends the running trip with [outcome] (driver and purpose) and records the baseline the next driver
+     * is compared against.
+     */
+    suspend fun onTripEnded(
+        at: Long,
+        reason: String,
+        reading: Reading,
+        outcome: EndOutcome? = null,
+    ): TripEntity? = db.withTransaction {
         pendingRoute = null
         val active = trips.getActive() ?: return@withTransaction null
-        val ended = active.copy(
+        val withOutcome = if (outcome == null) active else active.copy(
+            driverId = outcome.driverId ?: active.driverId,
+            driverProvisional = if (outcome.driverId == null) active.driverProvisional else outcome.driverProvisional,
+            purpose = outcome.purpose.name,
+            purposeProvisional = outcome.purposeProvisional,
+            destinationName = if (outcome.purpose == Purpose.PERSONAL) null else active.destinationName,
+        )
+        val ended = withOutcome.copy(
             status = TripEntity.STATUS_ENDED,
             endedAt = at,
             endOdometerKm = reading.odometerKm,
@@ -116,29 +150,34 @@ class TripBook(private val db: BobCarDatabase) {
      * driving with no stored trip → start one now; a stored trip but not driving → it ended while
      * the app was off, close it now ([TripEntity.END_APP_RESTART]). Otherwise nothing changes.
      * [drivingNow] null = gear not known yet: leave everything as it is until it is.
-     * [driver] is used only for a trip started here (nobody saw the driver card).
+     * [driver] is used only for a trip started here (nobody saw the driver card); [endOutcome] only for a
+     * trip closed here (nobody saw the trip-end card).
      */
     suspend fun onAppResumed(
         at: Long,
         drivingNow: Boolean?,
         reading: Reading,
         driver: DriverChoice? = null,
+        endOutcome: EndOutcome? = null,
     ): TripEntity? {
         val active = trips.getActive()
         return when {
             drivingNow == true && active == null -> onTripStarted(at, merged = false, reading, driver)
-            drivingNow == false && active != null -> onTripEnded(at, TripEntity.END_APP_RESTART, reading)
+            drivingNow == false && active != null -> onTripEnded(at, TripEntity.END_APP_RESTART, reading, endOutcome)
             else -> active
         }
     }
 
     private suspend fun reopenLastEnded(): TripEntity? {
         val last = trips.getLastEnded() ?: return null
+        // The purpose is decided again on the next trip-end card (a deleted personal destination stays deleted)
         val reopened = last.copy(
             status = TripEntity.STATUS_ACTIVE,
             endedAt = null,
             endOdometerKm = null,
             endReason = null,
+            purpose = null,
+            purposeProvisional = true,
         )
         trips.update(reopened)
         return reopened
