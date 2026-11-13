@@ -226,3 +226,42 @@ function numberIn(detail: string, key: string): number | null {
 function won(amount: number): string {
   return `${amount.toLocaleString("ko-KR")}원`;
 }
+
+// ---------------------------------------------------------------- cancellation and the daily check
+
+/**
+ * The card payment was cancelled (mock of the card company's cancellation record; whole amount only).
+ * Its flag is resolved ("결제 취소"), and the other payments around the same charge are judged again
+ * without it. null when there is no such payment.
+ */
+export async function cancelPayment(transactionId: string, now: number): Promise<FlagView | null | undefined> {
+  const ref = db().collection(COL.transactions).doc(transactionId);
+  const tx = await ref.get();
+  if (!tx.exists) return undefined;
+  if (tx.get("canceled") !== true) await ref.set({ canceled: true, canceledAt: now }, { merge: true });
+  const flag = await checkPayment(transactionId);
+  const category = tx.get("category") as string;
+  if (category in CHECKED) {
+    const charge = await chargeAround(tx.get("vehicleId") as string, tx.get("paidAt") as number, CHECKED[category as CheckedCategory].event);
+    if (charge) {
+      const rest = await paymentsIn(charge.vehicleId, category as CheckedCategory, charge.since - RECONCILE.windowMarginMs, charge.foundAt + RECONCILE.windowMarginMs);
+      if (rest.length > 0) await judge(charge, rest);
+    }
+  }
+  logger.info("payment cancelled", { transactionId });
+  return flag;
+}
+
+/** Once a day: every open flag is checked again (events that came late, payments cancelled since). */
+export async function recheckOpenFlags(): Promise<{ checked: number; resolved: number }> {
+  const open = await db().collection(COL.flags).where("status", "==", FLAG_OPEN).get();
+  let resolved = 0;
+  for (const doc of open.docs) {
+    const transactionId = doc.get("transactionId") as string | undefined;
+    if (!transactionId) continue;
+    const after = await checkPayment(transactionId);
+    if (after?.status === FLAG_RESOLVED) resolved++;
+  }
+  logger.info("open flags checked", { checked: open.size, resolved });
+  return { checked: open.size, resolved };
+}

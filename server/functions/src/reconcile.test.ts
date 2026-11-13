@@ -157,3 +157,56 @@ describe("matching rules", () => {
     expect((await pay(62_000, A + 30 * MIN, "FUEL")).flag).toMatchObject({ kind: "FUEL_PAYMENT", status: "OPEN", note: "주유 기록 없음" });
   });
 });
+
+describe("cancellation and the daily check", () => {
+  const cancel = (transactionId: string) => request(app).post(`/v1/transactions/${transactionId}/cancel`).set(auth()).send({});
+
+  it("a cancelled payment resolves its flag", async () => {
+    const paid = await pay(30_000, A + 30 * MIN);
+    await chargeFound();
+
+    const res = await cancel(paid.transactionId);
+
+    expect(res.status).toBe(200);
+    expect(await flag(paid.transactionId)).toMatchObject({ status: "RESOLVED", note: "결제 취소" });
+  });
+
+  it("cancelling one of two payments judges the other again without it", async () => {
+    const first = await pay(10_000, A + 20 * MIN);
+    const second = await pay(10_000, A + 40 * MIN);
+    await chargeFound();
+    expect(await flag(second.transactionId)).toMatchObject({ status: "OPEN", reason: "AMOUNT_MISMATCH" });
+
+    await cancel(first.transactionId);
+
+    // 12,191 / 10,000 = 1.22
+    expect(await flag(second.transactionId)).toMatchObject({ status: "RESOLVED", windowPaidTotal: 10_000, ratio: 1.22 });
+    expect(await flag(first.transactionId)).toMatchObject({ status: "RESOLVED", note: "결제 취소" });
+  });
+
+  it("an unknown payment cannot be cancelled", async () => {
+    expect((await cancel("nope")).status).toBe(404);
+  });
+
+  it("the daily check resolves a flag whose charge was stored without being judged", async () => {
+    const paid = await pay(12_000, A + 30 * MIN);
+    // A charge record that reached the database without the upload path (e.g. a late import)
+    await db().collection(COL.events).doc(`${VEHICLE}_late`).set({
+      vehicleId: VEHICLE,
+      type: "ChargeDetected",
+      occurredAt: B,
+      detail: `gainedPercent=45 from=23 to=68 kwh=34.83 foundAt=BOARDING since=TRIP_END sinceAt=${A}`,
+      driverId: "drv-001",
+    });
+
+    const res = await request(app).post("/v1/dev/reconcile").set(auth()).send({});
+
+    expect(res.body).toEqual({ checked: 1, resolved: 1 });
+    expect(await flag(paid.transactionId)).toMatchObject({ status: "RESOLVED", note: "충전 확인 +45%p (34.8 kWh)" });
+  });
+
+  it("the daily check route does not exist outside the emulator", async () => {
+    const prod = createApp({ dev: false });
+    expect((await request(prod).post("/v1/dev/reconcile").set(auth()).send({})).status).toBe(404);
+  });
+});
