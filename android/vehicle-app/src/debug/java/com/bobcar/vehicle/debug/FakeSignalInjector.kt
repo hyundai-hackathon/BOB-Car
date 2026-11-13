@@ -25,7 +25,7 @@ import com.bobcar.vehicle.util.maskForLog
  *   brake    on | off
  *   door     open | closed
  *   gear     P | R | N | D
- *   odometer <km>
+ *   odometer <km>             (a value below the current one is dropped once: send the same value twice)
  *   soc      <percent>
  *   route    <tollFare>:<destination>   navigation guidance started (no spaces; e.g. 4700:Incheon-Airport)
  *   continue (no value)       [계속 운행]

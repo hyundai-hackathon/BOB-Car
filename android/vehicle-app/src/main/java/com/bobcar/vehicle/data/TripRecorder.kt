@@ -36,6 +36,8 @@ import kotlinx.coroutines.launch
  *   loses its destination
  * - consent card answered: stored per driver (records of drivers who did not agree stay on the device)
  * - check-in started or confirmed: unsent records of this stay in the seat follow that driver ([assignDriver])
+ * - Boarded, TripStarted or resumed with no trip running: the reading is compared with the last snapshot
+ *   for a charge or an unrecorded drive ([GapDetector]); the events belong to the driver who found them
  *
  * Readings are taken from the signal snapshot on the signal thread when the event happens, then
  * everything is written one at a time in arrival order (so the check-in is always ready before the
@@ -54,9 +56,12 @@ class TripRecorder(
     private val recordConsent: (String, String, Long) -> Unit = { _, _, _ -> },
     /** Unsent records of the stay in the seat since (wall-clock) become this driver's (upload consent check). */
     private val assignDriver: (Long, String?) -> Unit = { _, _ -> },
+    /** Charge and unrecorded-drive events nobody owns yet become this driver's (the one who found them). */
+    private val claimFindings: (String) -> Unit = {},
 ) {
 
     private val book = TripBook(db)
+    private val gaps = GapDetector(db, recordEvent)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
@@ -64,14 +69,20 @@ class TripRecorder(
     /** Register with DrivingMonitor.addEventListener. Called on the signal thread. */
     val onDrivingEvent: (DrivingEvent) -> Unit = { event ->
         val snapshot = signals.snapshot.value
-        val reading = TripBook.Reading(snapshot.odometerKm, snapshot.socPercent)
+        val reading = TripBook.Reading(snapshot.odometerKm, snapshot.socPercent, snapshot.batteryCapacityWh)
         val at = WallClock.fromElapsed(event.at)
         when (event) {
-            is DrivingEvent.Boarded -> write("check-in") { startCheckin(at) }
+            is DrivingEvent.Boarded -> write("check-in") {
+                startCheckin(at)
+                gaps.request(EnergySnapshotEntity.KIND_BOARDING, at, reading)
+            }
             is DrivingEvent.CheckinClosed -> write("check-in close") { closeCheckin(at) }
             is DrivingEvent.TripStarted -> write("trip start") {
+                // Charged or moved while seated with no trip (no boarding in between): last chance to see it
+                if (db.tripDao().getActive() == null) gaps.checkNow(EnergySnapshotEntity.KIND_TRIP_START, at, reading)
                 val trip = book.onTripStarted(at, event.mergedWithPrevious, reading, checkinDriver())
-                Log.i(TAG, "trip #${trip.id} running${if (event.mergedWithPrevious) " (merged)" else ""} ${describe(trip)}")
+                val merged = event.mergedWithPrevious && trip.startedAt != at
+                Log.i(TAG, "trip #${trip.id} running${if (merged) " (merged)" else ""} ${describe(trip)}")
             }
             is DrivingEvent.EndCountdownStarted -> write("end card") { prepareEndChoice() }
             is DrivingEvent.TripEnded -> write("trip end") {
@@ -99,6 +110,11 @@ class TripRecorder(
                 val driver = if (drivingNow == true) defaults.resolve(at)?.let { TripBook.DriverChoice(it.driverId, true) } else null
                 // A trip closed here never showed its end card: the suggestion, provisional
                 val closing = if (drivingNow == false) db.tripDao().getActive() else null
+                // No trip was running: what changed while the app was off (a trip left open ends here instead)
+                if (drivingNow != null && db.tripDao().getActive() == null) {
+                    if (drivingNow) gaps.checkNow(EnergySnapshotEntity.KIND_APP_RESUME, at, reading)
+                    else gaps.request(EnergySnapshotEntity.KIND_APP_RESUME, at, reading)
+                }
                 val trip = book.onAppResumed(at, drivingNow, reading, driver, closing?.let { endOutcome(it) })
                 if (closing != null && trip != null) recordPurpose(trip, at)
                 Log.i(TAG, "resume drivingNow=$drivingNow trip=${trip?.let { "#${it.id} ${it.status} ${describe(it)}" } ?: "none"}")
@@ -130,6 +146,14 @@ class TripRecorder(
                     .onFailure { Log.e(TAG, "odometer fill failed", it) }
             }
         }
+        // A check asked for before the first odometer and battery values came in (right after a restart)
+        scope.launch {
+            signals.snapshot.map { TripBook.Reading(it.odometerKm, it.socPercent, it.batteryCapacityWh) }
+                .distinctUntilChanged()
+                .collect { reading ->
+                    runCatching { gaps.onReading(reading) }.onFailure { Log.e(TAG, "waiting check failed", it) }
+                }
+        }
     }
 
     /** The driver card was answered (or [다른 사람] chosen). Unknown or inactive IDs are ignored. */
@@ -141,6 +165,7 @@ class TripRecorder(
         val at = System.currentTimeMillis()
         val state = checkin.confirm(driverId)
         state?.let { assignDriver(it.boardedAt - ASSIGN_MARGIN_MS, driverId) }
+        claimFindings(driverId)
         val trip = book.onDriverConfirmed(driverId)
         // Chosen with [변경] on the trip-end card (or the driver card while it is up): the card shows it
         if (trip != null && endChoices.current?.tripId == trip.id) endChoices.chooseDriver(driverId)
@@ -198,6 +223,8 @@ class TripRecorder(
         checkin.start(at, default)
         // Events of this stay already stored (e.g. Boarded) belong to the default until someone is confirmed
         assignDriver(at - ASSIGN_MARGIN_MS, default?.driverId)
+        // Found on a restart with nobody seated: the driver boarding now is the one who found them
+        default?.driverId?.let(claimFindings)
         Log.i(TAG, "check-in: default driver ${default?.let { "${it.driverId} (${it.source})" } ?: "none"}")
     }
 

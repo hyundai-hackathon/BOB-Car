@@ -74,6 +74,7 @@ object VehicleRuntime {
             recordEvent = rec::record,
             recordConsent = rec::recordConsent,
             assignDriver = rec::assignDriver,
+            claimFindings = rec::claimFindings,
         ).also { tripRecorder = it }
         monitor.addEventListener(trips.onDrivingEvent)
         trips.start()

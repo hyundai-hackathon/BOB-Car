@@ -170,6 +170,27 @@ class TripBookTest {
     }
 
     @Test
+    fun endedTripLeavesATripEndSnapshot() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(12_340f, 80))
+        val ended = book.onTripEnded(2_000, "COUNTDOWN", TripBook.Reading(12_362f, 72, 77_400f))!!
+
+        val snapshot = db.energySnapshotDao().getLast()!!
+        assertEquals(EnergySnapshotEntity.KIND_TRIP_END, snapshot.kind)
+        assertEquals(2_000L, snapshot.takenAt)
+        assertEquals(ended.id, snapshot.tripId)
+        assertEquals(12_362f, snapshot.odometerKm)
+        assertEquals(72, snapshot.socPercent)
+        assertEquals(77_400f, snapshot.batteryCapacityWh)
+    }
+
+    @Test
+    fun tripEndWithNoRunningTripLeavesNoSnapshot() = runTest {
+        assertNull(book.onTripEnded(2_000, "COUNTDOWN", reading(100f)))
+
+        assertNull(db.energySnapshotDao().getLast())
+    }
+
+    @Test
     fun runningTripIsRememberedInTheBaseline() = runTest {
         val trip = book.onTripStarted(1_000, merged = false, reading(100f))
 
@@ -248,6 +269,32 @@ class TripBookTest {
         val ended = book.onTripEnded(3_000, "COUNTDOWN", reading(125f))!!
         assertEquals(1_000L, ended.startedAt)
         assertEquals(25f, ended.distanceKm())
+    }
+
+    @Test
+    fun mergedStartAfterAnUnrecordedDriveStartsANewTrip() = runTest {
+        val first = book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(110f))
+
+        // 6 km were driven with no record before leaving again
+        val second = book.onTripStarted(2_300, merged = true, reading(116f))
+
+        assertTrue(second.id != first.id)
+        assertEquals(2_300L, second.startedAt)
+        assertEquals(116f, second.startOdometerKm)
+        val firstStored = db.tripDao().getById(first.id)!!
+        assertEquals(TripEntity.STATUS_ENDED, firstStored.status)
+        assertEquals(10f, firstStored.distanceKm())
+    }
+
+    @Test
+    fun mergedStartWithinHalfAKilometreStillContinuesTheTrip() = runTest {
+        val first = book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(110f))
+
+        val merged = book.onTripStarted(2_300, merged = true, reading(110.4f))
+
+        assertEquals(first.id, merged.id)
     }
 
     @Test

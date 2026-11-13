@@ -53,14 +53,21 @@ fun TripEntity.distanceKm(): Float? {
 @Entity(tableName = "energy_snapshot", indices = [Index("takenAt")])
 data class EnergySnapshotEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** TRIP_END, BOARDING, APP_RESUME */
+    /** TRIP_END, BOARDING, APP_RESUME, TRIP_START */
     val kind: String,
     val takenAt: Long,
     val tripId: Long? = null,
     val socPercent: Int? = null,
     val batteryCapacityWh: Float? = null,
     val odometerKm: Float? = null,
-)
+) {
+    companion object {
+        const val KIND_TRIP_END = "TRIP_END"
+        const val KIND_BOARDING = "BOARDING"
+        const val KIND_APP_RESUME = "APP_RESUME"
+        const val KIND_TRIP_START = "TRIP_START"
+    }
+}
 
 /** Vehicle-side events: driving state changes now; charge detected and unrecorded drive later. */
 @Entity(tableName = "vehicle_event", indices = [Index("occurredAt")])

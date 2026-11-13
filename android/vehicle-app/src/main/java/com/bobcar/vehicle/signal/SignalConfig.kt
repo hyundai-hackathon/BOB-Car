@@ -29,4 +29,7 @@ object SignalConfig {
 
     /** Odometer gain since the last recorded trip end above this counts as a drive nobody recorded. */
     const val UNRECORDED_DRIVE_MIN_KM = 0.5f
+
+    /** Battery state of charge gain (percentage points) between two snapshots from which it counts as a charge. */
+    const val CHARGE_MIN_SOC_GAIN_PERCENT = 5
 }

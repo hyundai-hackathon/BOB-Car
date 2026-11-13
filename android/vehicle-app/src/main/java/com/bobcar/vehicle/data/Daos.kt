@@ -51,6 +51,13 @@ interface EnergySnapshotDao {
 
     @Query("SELECT * FROM energy_snapshot WHERE kind = :kind ORDER BY takenAt DESC LIMIT 1")
     suspend fun getLatest(kind: String): EnergySnapshotEntity?
+
+    /** The snapshot stored last, of any kind: what the next snapshot is compared against. */
+    @Query("SELECT * FROM energy_snapshot ORDER BY id DESC LIMIT 1")
+    suspend fun getLast(): EnergySnapshotEntity?
+
+    @Query("SELECT COUNT(*) FROM energy_snapshot")
+    suspend fun count(): Int
 }
 
 @Dao
@@ -163,6 +170,17 @@ interface UploadQueueDao {
             "WHERE sentAt IS NULL AND kind = 'vehicle_event' AND createdAt >= :since",
     )
     suspend fun assignDriver(since: Long, driverId: String?): Int
+
+    /**
+     * Unsent events of [types] that nobody owns yet (found while nobody was checked in, e.g. on a restart
+     * with an empty seat) become [driverId]'s: the next driver to board is the one who found them.
+     */
+    @Query(
+        "UPDATE upload_queue SET driverId = :driverId " +
+            "WHERE sentAt IS NULL AND driverId IS NULL AND kind = 'vehicle_event' " +
+            "AND refId IN (SELECT id FROM vehicle_event WHERE type IN (:types))",
+    )
+    suspend fun claimUnowned(driverId: String, types: List<String>): Int
 
     @Query("UPDATE upload_queue SET sentAt = :sentAt WHERE id IN (:ids)")
     suspend fun markSent(ids: List<Long>, sentAt: Long)
