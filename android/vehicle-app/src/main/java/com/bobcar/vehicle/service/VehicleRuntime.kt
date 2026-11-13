@@ -20,6 +20,7 @@ import com.bobcar.vehicle.signal.VehicleSignals
 import com.bobcar.vehicle.trip.Purpose
 import com.bobcar.vehicle.trip.TripEndChoices
 import com.bobcar.vehicle.upload.UploadScheduler
+import com.bobcar.vehicle.voice.VoiceGateway
 
 /**
  * Everything that collects and records vehicle data, owned by [CollectionService] (one per process).
@@ -54,12 +55,17 @@ object VehicleRuntime {
     private var naviRefreshListener: ((DrivingEvent) -> Unit)? = null
     private var tripRecorder: TripRecorder? = null
     private var unregisterFakeSignals: (() -> Unit)? = null
+    private var voice: VoiceGateway? = null
 
     @Synchronized
     fun start(context: Context) {
         if (started) return
         started = true
         val app = context.applicationContext
+
+        // Voice guidance (on-device TTS). Starts first: initialization takes a while and must not hold up recording
+        val speaker = VoiceGateway(app).also { voice = it }
+        speaker.initialize()
 
         val db = BobCarDatabase.get(app)
         // Queue entries carry the checked-in driver, so the upload can hold back drivers who did not agree
@@ -158,6 +164,8 @@ object VehicleRuntime {
         val n = navi
         val rec = recorder
         val trips = tripRecorder
+        voice?.release()
+        voice = null
         initHandler.post {
             n?.release()
             c?.release()

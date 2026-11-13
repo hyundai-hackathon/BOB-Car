@@ -26,6 +26,9 @@
     <!-- NaviHelper: getDestinationInfo, getBookmarkInfo, getCurrentLocationInfo (@RequiresPermission), onRouteStarted -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
 
+    <!-- TextToSpeech SDK (voice guidance, ON_DEVICE). Defined by ai.pleos.playground.caas, protectionLevel="normal" -->
+    <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
+
     <!-- Foreground collection service (keeps the app from being frozen in the background, troubleshooting B11) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
