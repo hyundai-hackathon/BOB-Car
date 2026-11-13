@@ -98,6 +98,33 @@ class TripBookTest {
     }
 
     @Test
+    fun mergedTripTakesTheRouteSetUpBeforeLeavingAgain() = runTest {
+        book.onRouteStarted(TripBook.Route("판교 테크노밸리", 2_400))
+        val first = book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(118f))
+        assertNull(book.onRouteStarted(TripBook.Route("동네 마트", 0)))
+
+        val merged = book.onTripStarted(2_300, merged = true, reading(118f))
+
+        assertEquals(first.id, merged.id)
+        assertEquals("동네 마트", merged.destinationName)
+        assertEquals(0, merged.expectedTollFare)
+        assertEquals("동네 마트", db.tripDao().getById(first.id)!!.destinationName)
+    }
+
+    @Test
+    fun mergedTripWithoutNewRouteKeepsItsDestination() = runTest {
+        book.onRouteStarted(TripBook.Route("판교 테크노밸리", 2_400))
+        book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(118f))
+
+        val merged = book.onTripStarted(2_300, merged = true, reading(118f))
+
+        assertEquals("판교 테크노밸리", merged.destinationName)
+        assertEquals(2_400, merged.expectedTollFare)
+    }
+
+    @Test
     fun mergedTripDecidesItsPurposeAgain() = runTest {
         book.onTripStarted(1_000, merged = false, reading(100f))
         book.onTripEnded(2_000, "COUNTDOWN", reading(110f), outcome(Purpose.PERSONAL))

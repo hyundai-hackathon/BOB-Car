@@ -51,7 +51,8 @@ class TripBook(private val db: BobCarDatabase) {
         // Already running (e.g. app restarted mid-trip): keep it, never open a second one
         trips.getActive()?.let { return@withTransaction it }
 
-        val trip = (if (merged) reopenLastEnded() else null) ?: run {
+        // A continued trip takes guidance set up in P before leaving again (latest wins, like during a trip)
+        val trip = (if (merged) reopenLastEnded()?.let { withRoute(it, pendingRoute) } else null) ?: run {
             val route = pendingRoute
             val new = TripEntity(
                 status = TripEntity.STATUS_ACTIVE,
@@ -76,7 +77,13 @@ class TripBook(private val db: BobCarDatabase) {
             pendingRoute = route
             return null
         }
-        val updated = active.copy(
+        return withRoute(active, route)
+    }
+
+    /** Puts [route] on [trip] (destination and expected toll); unchanged when there is none. */
+    private suspend fun withRoute(trip: TripEntity, route: Route?): TripEntity {
+        if (route == null) return trip
+        val updated = trip.copy(
             destinationName = route.destinationName.takeIf { it.isNotBlank() },
             expectedTollFare = route.tollFare,
         )
