@@ -3,13 +3,12 @@ import * as logger from "firebase-functions/logger";
 import { requireIdToken } from "./auth";
 import { COL, db } from "./db";
 import { ensureSeeded } from "./seed";
+import { closeStaleTrips } from "./trips";
 import { isObject, processUpload, UploadError } from "./uploads";
 
 export interface AppOptions {
-  /** Emulator and tests only: seed data on the first call, and dev routes. */
+  /** Emulator and tests only: seed data on the first call, and dev routes (/v1/dev/...). */
   dev: boolean;
-  /** Extra routes mounted under /v1 (e.g. dev routes added by other modules). */
-  extend?: (v1: express.Router) => void;
 }
 
 const TRANSACTION_CATEGORIES = ["CHARGE", "FUEL", "TOLL", "OTHER"];
@@ -121,7 +120,16 @@ export function createApp(options: AppOptions): express.Express {
     res.status(201).json({ transactionId: ref.id });
   });
 
-  options.extend?.(v1);
+  if (options.dev) {
+    /**
+     * Runs the scheduled auto-close now (the emulator does not run scheduled functions by itself).
+     * {"now": epoch ms} pretends the check runs at that time.
+     */
+    v1.post("/dev/auto-close", async (req, res) => {
+      const now = isObject(req.body) && typeof req.body.now === "number" ? req.body.now : Date.now();
+      res.json({ closed: await closeStaleTrips(now) });
+    });
+  }
 
   app.use("/v1", v1);
   app.use((_req: Request, res: Response) => {

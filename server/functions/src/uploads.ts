@@ -1,12 +1,14 @@
 import * as logger from "firebase-functions/logger";
 import { MAX_ITEMS_PER_UPLOAD } from "./config";
 import { COL, db } from "./db";
+import { KIND_TRIP, parseTrip, readForTrip, type TripSnapshot, writeTripSnapshot } from "./trips";
 
 /*
  * POST /v1/uploads: a batch from the vehicle app's upload queue.
  *
  * Body: {"vehicleId":"veh-001","items":[{"queueId":1,"kind":"vehicle_event","createdAt":..,
  *        "driverId":"drv-001","payload":{"eventId":..,"type":"Boarded","occurredAt":..,"detail":..}}]}
+ * Kinds: vehicle_event, consent, trip (payload = the whole trip row, see trips.ts).
  * (vehicleId and driverId are added to the vehicle app's current body when it is connected to the server.)
  *
  * - Consent items are applied first, so a driver's records sent in the same batch as their consent go through.
@@ -75,15 +77,20 @@ export async function processUpload(body: unknown, now: number): Promise<UploadR
       result.skipped.push({ queueId: item.queueId, reason: "unknown-driver" });
       continue;
     }
-    if (item.kind !== KIND_CONSENT && item.kind !== KIND_VEHICLE_EVENT) {
+    if (item.kind !== KIND_CONSENT && item.kind !== KIND_VEHICLE_EVENT && item.kind !== KIND_TRIP) {
       result.skipped.push({ queueId: item.queueId, reason: "unsupported-kind" });
+      continue;
+    }
+    const trip = item.kind === KIND_TRIP ? parseTrip(item.payload) : null;
+    if (item.kind === KIND_TRIP && !trip) {
+      result.skipped.push({ queueId: item.queueId, reason: "invalid" });
       continue;
     }
     if (item.kind !== KIND_CONSENT && !driver.agreed) {
       result.skipped.push({ queueId: item.queueId, reason: "no-consent" });
       continue;
     }
-    const applied = await applyOnce(vehicleId, item, now);
+    const applied = await applyOnce(vehicleId, item, trip, now);
     (applied ? result.stored : result.duplicates).push(item.queueId);
     if (item.kind === KIND_CONSENT) driver.agreed = true;
   }
@@ -102,11 +109,17 @@ export async function processUpload(body: unknown, now: number): Promise<UploadR
 }
 
 /** Writes the item and its receipt in one transaction; false when the receipt already existed. */
-async function applyOnce(vehicleId: string, item: UploadItem, now: number): Promise<boolean> {
+async function applyOnce(vehicleId: string, item: UploadItem, trip: TripSnapshot | null, now: number): Promise<boolean> {
   const firestore = db();
   const receiptRef = firestore.collection(COL.receipts).doc(`${vehicleId}_${item.queueId}`);
   return firestore.runTransaction(async (tx) => {
     if ((await tx.get(receiptRef)).exists) return false;
+    if (trip) {
+      const reads = await readForTrip(tx, vehicleId, trip.tripId);
+      writeTripSnapshot(tx, vehicleId, item.queueId, trip, reads, now);
+      tx.set(receiptRef, { vehicleId, queueId: item.queueId, kind: item.kind, receivedAt: now });
+      return true;
+    }
     tx.set(firestore.collection(COL.events).doc(`${vehicleId}_${item.queueId}`), {
       vehicleId,
       queueId: item.queueId,
