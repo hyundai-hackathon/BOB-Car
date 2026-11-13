@@ -85,6 +85,7 @@ object VehicleRuntime {
             assignDriver = rec::assignDriver,
             claimFindings = rec::claimFindings,
             announce = guide::announce,
+            recordTrip = rec::recordTrip,
         ).also { tripRecorder = it }
         monitor.addEventListener(trips.onDrivingEvent)
         // Voice ③: the end countdown (and silence when it is cancelled)

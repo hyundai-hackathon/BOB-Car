@@ -1,66 +1,109 @@
 package com.bobcar.vehicle.upload
 
 import com.bobcar.vehicle.data.UploadQueueEntity
+import com.bobcar.vehicle.server.HttpTransport
+import com.bobcar.vehicle.server.IdTokenProvider
+import com.bobcar.vehicle.server.ServerConfig
+import com.bobcar.vehicle.server.UrlConnectionTransport
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
- * Posts a batch as JSON to [baseUrl] + [PATH]. The server API is not fixed yet (server stage),
- * so the path and body shape live only here.
+ * POST <server>/api/v1/uploads with the ID token in the Authorization header (never in the URL).
  *
- * Body: {"items":[{"queueId":1,"kind":"vehicle_event","createdAt":..,"payload":{..}}]}
- * The server should ignore a queueId it has already stored, since a batch can be sent twice
- * when the response is lost.
+ * Body: {"vehicleId":"veh-001","items":[{"queueId":1,"kind":"vehicle_event","createdAt":..,
+ *        "driverId":"drv-001","payload":{..}}]}
+ * Answer 200: {"stored":[..],"duplicates":[..],"skipped":[{"queueId":3,"reason":"no-consent"}]}
+ * (server/functions/src/uploads.ts). A resent item is a duplicate on the server, never stored twice.
+ *
+ * A 401 gets one more try with a fresh token. Sign-in trouble is a Retry: items keep their attempts.
  */
-class HttpUploadSender(private val baseUrl: String) : UploadSender {
+class HttpUploadSender(
+    private val config: ServerConfig,
+    private val tokens: IdTokenProvider,
+    private val http: HttpTransport = UrlConnectionTransport,
+) : UploadSender {
 
     override fun send(items: List<UploadQueueEntity>): SendResult {
-        val body = JSONObject().put(
-            "items",
-            JSONArray().apply {
-                items.forEach {
-                    put(
-                        JSONObject()
-                            .put("queueId", it.id)
-                            .put("kind", it.kind)
-                            .put("createdAt", it.createdAt)
-                            .put("payload", JSONObject(it.payloadJson)),
-                    )
-                }
-            },
-        ).toString().toByteArray(Charsets.UTF_8)
-
-        val connection = try {
-            URL(baseUrl.trimEnd('/') + PATH).openConnection() as HttpURLConnection
-        } catch (e: Exception) {
-            return SendResult.Rejected("bad server url: ${e.javaClass.simpleName}")
-        }
-        return try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = TIMEOUT_MS
-            connection.readTimeout = TIMEOUT_MS
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            connection.setFixedLengthStreamingMode(body.size)
-            connection.outputStream.use { it.write(body) }
-            val code = connection.responseCode
-            when {
-                code in 200..299 -> SendResult.Success
-                code == 408 || code == 429 || code >= 500 -> SendResult.Retry("HTTP $code")
-                else -> SendResult.Rejected("HTTP $code")
-            }
-        } catch (e: IOException) {
-            SendResult.Retry(e.javaClass.simpleName)
-        } finally {
-            connection.disconnect()
+        val body = body(items)
+        var answer = post(body, forceRefresh = false)
+        if (answer is Answer.Unauthorized) answer = post(body, forceRefresh = true)
+        return when (answer) {
+            is Answer.Done -> answer.result
+            Answer.Unauthorized -> SendResult.Retry("HTTP 401")
         }
     }
 
+    private sealed interface Answer {
+        data class Done(val result: SendResult) : Answer
+        data object Unauthorized : Answer
+    }
+
+    private fun post(body: ByteArray, forceRefresh: Boolean): Answer {
+        val token = when (val t = tokens.get(forceRefresh)) {
+            is IdTokenProvider.Result.Token -> t.idToken
+            is IdTokenProvider.Result.Unavailable -> return Answer.Done(SendResult.Retry(t.reason))
+        }
+        val response = try {
+            http.send(
+                "POST",
+                config.api(PATH),
+                mapOf(
+                    "Content-Type" to "application/json; charset=utf-8",
+                    "Authorization" to "Bearer $token",
+                ),
+                body,
+            )
+        } catch (e: IOException) {
+            return Answer.Done(SendResult.Retry(e.javaClass.simpleName))
+        }
+        val code = response.code
+        return when {
+            code == 401 -> Answer.Unauthorized
+            code in 200..299 -> Answer.Done(SendResult.Success(skipped(response.body)))
+            code == 408 || code == 429 || code >= 500 -> Answer.Done(SendResult.Retry("HTTP $code"))
+            else -> Answer.Done(SendResult.Rejected("HTTP $code"))
+        }
+    }
+
+    private fun body(items: List<UploadQueueEntity>): ByteArray =
+        JSONObject()
+            .put("vehicleId", config.vehicleId)
+            .put(
+                "items",
+                JSONArray().apply {
+                    items.forEach {
+                        put(
+                            JSONObject()
+                                .put("queueId", it.id)
+                                .put("kind", it.kind)
+                                .put("createdAt", it.createdAt)
+                                .put("driverId", it.driverId ?: JSONObject.NULL)
+                                .put("payload", JSONObject(it.payloadJson)),
+                        )
+                    }
+                },
+            )
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+
+    /** Queue IDs the server did not store, with its reason. An answer it cannot read counts as all done. */
+    private fun skipped(body: String): Map<Long, String> = try {
+        val list = JSONObject(body).optJSONArray("skipped") ?: return emptyMap()
+        buildMap {
+            for (i in 0 until list.length()) {
+                val entry = list.getJSONObject(i)
+                if (entry.isNull("queueId")) continue
+                put(entry.getLong("queueId"), entry.optString("reason", "unknown"))
+            }
+        }
+    } catch (e: JSONException) {
+        emptyMap()
+    }
+
     private companion object {
-        const val PATH = "/api/v1/uploads"
-        const val TIMEOUT_MS = 10_000
+        const val PATH = "/uploads"
     }
 }

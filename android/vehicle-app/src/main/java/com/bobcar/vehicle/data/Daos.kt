@@ -152,12 +152,12 @@ interface UploadQueueDao {
     suspend fun getPending(limit: Int): List<UploadQueueEntity>
 
     /**
-     * Unsent items to send now: records of [driverIds] (drivers who agreed) only, oldest first,
-     * skipping ones the server refused [maxAttempts] times.
+     * Unsent items to send now: records of [driverIds] (drivers who agreed) only, consent records first,
+     * then oldest first, skipping ones the server refused [maxAttempts] times.
      */
     @Query(
         "SELECT * FROM upload_queue WHERE sentAt IS NULL AND attempts < :maxAttempts AND driverId IN (:driverIds) " +
-            "ORDER BY id LIMIT :limit",
+            "ORDER BY (kind = 'consent') DESC, id LIMIT :limit",
     )
     suspend fun getSendable(limit: Int, maxAttempts: Int, driverIds: List<String>): List<UploadQueueEntity>
 

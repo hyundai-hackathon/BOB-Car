@@ -5,18 +5,26 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.bobcar.vehicle.data.BobCarDatabase
+import com.bobcar.vehicle.data.DrivingRecorder
+import com.bobcar.vehicle.server.ServerClients
+import com.bobcar.vehicle.server.ServerConfig
 
 /** Runs [Uploader] when the network is up. Logs counts and status only, never record contents. */
 class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val serverUrl = UploadScheduler.serverUrl
         if (!UploadScheduler.serverConfigured) {
             Log.i(TAG, "server not configured or not allowed, queue kept")
             return Result.success()
         }
         val db = BobCarDatabase.get(applicationContext)
-        val uploader = Uploader(db.uploadQueueDao(), db.driverConsentDao(), HttpUploadSender(serverUrl))
+        val sender = HttpUploadSender(ServerConfig.current, ServerClients.tokens(applicationContext))
+        val uploader = Uploader(
+            db.uploadQueueDao(),
+            db.driverConsentDao(),
+            sender,
+            resendConsent = { drivers -> drivers.forEach { DrivingRecorder.requeueConsent(db, it) } },
+        )
         val outcome = uploader.run()
         val removed = uploader.cleanUp()
         return when (outcome) {

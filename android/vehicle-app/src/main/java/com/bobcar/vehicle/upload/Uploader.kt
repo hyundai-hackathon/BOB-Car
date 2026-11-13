@@ -10,6 +10,11 @@ import com.bobcar.vehicle.data.UploadQueueDao
  *
  * Only records of drivers who agreed to collection are sent (CLAUDE.md rule 6). The rest, and records
  * with no driver yet, stay in the queue and go out on a later run once the driver agrees.
+ * Consent records go first, so the server knows a driver's consent before their other records.
+ *
+ * Items the server skipped count an attempt (after [MAX_ATTEMPTS] they are no longer sent). When it skipped
+ * them for missing consent (its data was wiped, e.g. an emulator restart), the driver's consent is queued
+ * again with [resendConsent], once per run, and goes out in the next batch.
  */
 class Uploader(
     private val dao: UploadQueueDao,
@@ -17,6 +22,8 @@ class Uploader(
     private val sender: UploadSender,
     private val batchSize: Int = BATCH_SIZE,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Queues the consent records of these drivers again (they agreed on this device). */
+    private val resendConsent: suspend (Set<String>) -> Unit = {},
 ) {
 
     sealed interface Outcome {
@@ -37,6 +44,7 @@ class Uploader(
 
     suspend fun run(): Outcome {
         var sent = 0
+        val consentResent = mutableSetOf<String>()
         val agreed = consents.getAll().filter { it.isAgreed() }.map { it.driverId }
         if (agreed.isEmpty()) return Outcome.Done(0)
         while (true) {
@@ -44,9 +52,22 @@ class Uploader(
             if (batch.isEmpty()) return Outcome.Done(sent)
             val ids = batch.map { it.id }
             when (val result = sender.send(batch)) {
-                SendResult.Success -> {
-                    dao.markSent(ids, now())
-                    sent += batch.size
+                is SendResult.Success -> {
+                    val skipped = result.skipped.filterKeys { it in ids }
+                    val done = ids.filter { it !in skipped }
+                    if (done.isNotEmpty()) dao.markSent(done, now())
+                    sent += done.size
+                    skipped.entries.groupBy({ it.value }, { it.key }).forEach { (reason, failed) ->
+                        dao.markFailed(failed, "skipped: $reason")
+                    }
+                    val needConsent = batch
+                        .filter { skipped[it.id] == SendResult.SKIP_NO_CONSENT }
+                        .mapNotNull { it.driverId }
+                        .toSet() - consentResent
+                    if (needConsent.isNotEmpty()) {
+                        resendConsent(needConsent)
+                        consentResent += needConsent
+                    }
                 }
                 is SendResult.Retry -> return Outcome.Retry(sent, result.reason)
                 is SendResult.Rejected -> {

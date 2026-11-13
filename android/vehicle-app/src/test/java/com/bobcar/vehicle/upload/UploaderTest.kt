@@ -30,7 +30,7 @@ class UploaderTest {
         private val script = ArrayDeque(results.toList())
         override fun send(items: List<UploadQueueEntity>): SendResult {
             batches += items.map { it.id }
-            return script.removeFirstOrNull() ?: SendResult.Success
+            return script.removeFirstOrNull() ?: SendResult.Success()
         }
     }
 
@@ -130,7 +130,8 @@ class UploaderTest {
         val sender = FakeSender()
         uploader(sender).run()
 
-        assertEquals(listOf(before + consent), sender.batches)
+        // Consent records go first
+        assertEquals(listOf(consent + before), sender.batches)
         assertEquals(stay, dao.getPending(10).map { it.id })
         assertTrue(dao.getPending(10).all { it.driverId == "drv-002" })
     }
@@ -160,7 +161,7 @@ class UploaderTest {
     @Test
     fun temporaryFailureKeepsItemsUntouchedForRetry() = runTest {
         enqueue(3)
-        val sender = FakeSender(SendResult.Success, SendResult.Retry("ConnectException"))
+        val sender = FakeSender(SendResult.Success(), SendResult.Retry("ConnectException"))
 
         val outcome = uploader(sender, batchSize = 2).run()
 
@@ -203,6 +204,61 @@ class UploaderTest {
         assertEquals(listOf(listOf(ids[1])), sender.batches)
         // Still counted as unsent on screen
         assertEquals(1, dao.pendingCountFlow().first())
+    }
+
+    // ---------------------------------------------------------------- server answers per item
+
+    @Test
+    fun consentRecordsAreSentBeforeOlderRecords() = runTest {
+        val events = enqueue(2)
+        val consent = enqueue(1, kind = "consent")
+        val sender = FakeSender()
+
+        uploader(sender).run()
+
+        assertEquals(listOf(consent + events), sender.batches)
+    }
+
+    @Test
+    fun itemsTheServerSkippedStayQueuedWithAnAttemptAndTheRestAreDone() = runTest {
+        val ids = enqueue(3)
+        // The server always skips the middle one as invalid
+        val batches = mutableListOf<List<Long>>()
+        val sender = UploadSender { items ->
+            batches += items.map { it.id }
+            SendResult.Success(if (ids[1] in items.map { it.id }) mapOf(ids[1] to "invalid") else emptyMap())
+        }
+
+        val outcome = uploader(sender).run()
+
+        assertEquals(Uploader.Outcome.Done(2), outcome)
+        val left = dao.getPending(10).single()
+        assertEquals(ids[1], left.id)
+        // Tried again in the same run until it ran out of attempts, then left alone
+        assertEquals(Uploader.MAX_ATTEMPTS, left.attempts)
+        assertEquals("skipped: invalid", left.lastError)
+        assertEquals(listOf(ids, listOf(ids[1]), listOf(ids[1])), batches)
+    }
+
+    @Test
+    fun missingConsentOnTheServerQueuesTheConsentAgainOnce() = runTest {
+        val ids = enqueue(2)
+        val resent = mutableListOf<Set<String>>()
+        var consentId = 0L
+        // First answer: the server has no consent for AGREED (its data was wiped); then all goes through
+        val sender = FakeSender(SendResult.Success(ids.associateWith { SendResult.SKIP_NO_CONSENT }))
+        val uploader = Uploader(dao, consents, sender, resendConsent = { drivers ->
+            resent += drivers
+            consentId = dao.insert(UploadQueueEntity(kind = "consent", payloadJson = "{}", createdAt = 99, driverId = AGREED))
+        })
+
+        val outcome = uploader.run()
+
+        assertEquals(listOf(setOf(AGREED)), resent)
+        assertEquals(Uploader.Outcome.Done(3), outcome)
+        // The consent goes first in the next batch, then the two records again
+        assertEquals(listOf(ids, listOf(consentId) + ids), sender.batches)
+        assertEquals(0, dao.pendingCountFlow().first())
     }
 
     @Test

@@ -8,7 +8,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import com.bobcar.vehicle.BuildConfig
+import com.bobcar.vehicle.server.ServerConfig
 import java.util.concurrent.TimeUnit
 
 /**
@@ -24,10 +24,8 @@ object UploadScheduler {
     private const val WORK_NAME = "upload-queue"
     private const val BACKOFF_SECONDS = 30L
 
-    val serverUrl: String = BuildConfig.SERVER_URL.trim()
-
-    /** A server URL is set and allowed for this build (release: HTTPS only). */
-    val serverConfigured: Boolean = canSendTo(serverUrl, BuildConfig.DEBUG)
+    /** A server is set and allowed for this build (release: HTTPS only), with what sign-in needs. */
+    val serverConfigured: Boolean get() = ServerConfig.current.configured
 
     @Volatile private var loggedNotConfigured = false
 
@@ -35,8 +33,8 @@ object UploadScheduler {
         if (!serverConfigured) {
             if (!loggedNotConfigured) {
                 loggedNotConfigured = true
-                if (serverUrl.isEmpty()) Log.i(TAG, "server not configured, records stay in the upload queue")
-                else Log.w(TAG, "server URL is not HTTPS, release build does not send; records stay in the upload queue")
+                if (ServerConfig.current.serverUrl.isEmpty()) Log.i(TAG, "server not configured, records stay in the upload queue")
+                else Log.w(TAG, "server or sign-in not allowed for this build (release: HTTPS only, API key needed); records stay in the upload queue")
             }
             return
         }
