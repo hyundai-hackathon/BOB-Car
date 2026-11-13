@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
  * - CheckinClosed while unconfirmed: the default is recorded as provisional ([recordEvent])
  * - TripStarted: the trip gets the check-in's driver
  * - consent card answered: stored per driver (records of drivers who did not agree stay on the device)
+ * - check-in started or confirmed: unsent records of this stay in the seat follow that driver ([assignDriver])
  *
  * Readings are taken from the signal snapshot on the signal thread when the event happens, then
  * everything is written one at a time in arrival order (so the check-in is always ready before the
@@ -39,6 +40,10 @@ class TripRecorder(
     private val defaults: DriverDefaults,
     /** Stores a vehicle event (type, detail, wall-clock time) with its upload entry. */
     private val recordEvent: (String, String?, Long) -> Unit = { _, _, _ -> },
+    /** Stores a driver's consent (driver ID, detail, wall-clock time) as that driver's upload entry. */
+    private val recordConsent: (String, String, Long) -> Unit = { _, _, _ -> },
+    /** Unsent records of the stay in the seat since (wall-clock) become this driver's (upload consent check). */
+    private val assignDriver: (Long, String?) -> Unit = { _, _ -> },
 ) {
 
     private val book = TripBook(db)
@@ -114,6 +119,7 @@ class TripRecorder(
         }
         val at = System.currentTimeMillis()
         val state = checkin.confirm(driverId)
+        state?.let { assignDriver(it.boardedAt - ASSIGN_MARGIN_MS, driverId) }
         val trip = book.onDriverConfirmed(driverId)
         recordEvent(EVENT_DRIVER_CONFIRMED, "driver=$driverId", at)
         Log.i(TAG, "driver confirmed: $driverId (check-in=${state != null}, trip=${trip?.id ?: "none"})")
@@ -132,7 +138,8 @@ class TripRecorder(
         val status = if (agreed) DriverConsentEntity.STATUS_AGREED else DriverConsentEntity.STATUS_DEFERRED
         db.driverConsentDao().upsert(DriverConsentEntity(driverId, status, at, ConsentNotice.VERSION))
         checkin.consentAnswered(driverId)
-        if (agreed) recordEvent(EVENT_CONSENT_AGREED, "driver=$driverId version=${ConsentNotice.VERSION}", at)
+        // The driver's records waiting on the device go out with this (upload checks consent)
+        if (agreed) recordConsent(driverId, "driver=$driverId version=${ConsentNotice.VERSION}", at)
         Log.i(TAG, "consent $status: $driverId (notice v${ConsentNotice.VERSION})")
     }
 
@@ -159,6 +166,8 @@ class TripRecorder(
     private suspend fun startCheckin(at: Long) {
         val default = defaults.resolve(at)
         checkin.start(at, default)
+        // Events of this stay already stored (e.g. Boarded) belong to the default until someone is confirmed
+        assignDriver(at - ASSIGN_MARGIN_MS, default?.driverId)
         Log.i(TAG, "check-in: default driver ${default?.let { "${it.driverId} (${it.source})" } ?: "none"}")
     }
 
@@ -197,6 +206,11 @@ class TripRecorder(
         const val TAG = "BOBCar.Trip"
         const val EVENT_DRIVER_PROVISIONAL = "DriverProvisional"
         const val EVENT_DRIVER_CONFIRMED = "DriverConfirmed"
-        const val EVENT_CONSENT_AGREED = "ConsentAgreed"
+
+        /**
+         * Boarding time and queue entry times come from separate clock reads; this margin keeps the stay's
+         * first event (Boarded) inside the range. Much shorter than any real gap between two stays.
+         */
+        const val ASSIGN_MARGIN_MS = 1_000L
     }
 }

@@ -12,6 +12,7 @@ import ai.pleos.playground.vehicle.listener.EvBatteryStateOfChargeListener
 import ai.pleos.playground.vehicle.listener.SeatOccupancyListener
 import android.content.Context
 import android.util.Log
+import com.bobcar.vehicle.BuildConfig
 import com.bobcar.vehicle.signal.SignalConfig
 import com.bobcar.vehicle.signal.SignalEvent
 import com.bobcar.vehicle.signal.VehicleSignals
@@ -126,11 +127,13 @@ class VehicleGateway(context: Context) {
 
     // ---------------------------------------------------------------- clean-up (signal thread)
 
-    /** SDK reports true when the seat is EMPTY (S2). Inverted here and nowhere else. */
-    private fun onSeatRaw(empty: Boolean?) {
+    private fun onSeatRaw(raw: Boolean?) {
+        if (raw == null) return
+        onSeat(seatOccupiedFromSdk(raw, BuildConfig.VEHICLE_SDK_VERSION))
+    }
+
+    private fun onSeat(occupied: Boolean) {
         val s = signals ?: return
-        if (empty == null) return
-        val occupied = !empty
         if (occupied == seatOccupied) return
         val previous = seatOccupied
         seatOccupied = occupied
@@ -234,7 +237,8 @@ class VehicleGateway(context: Context) {
     // ---------------------------------------------------------------- fake values (debug)
 
     /** Feeds values through the same clean-up as SDK values. Used by the debug fake signal receiver. */
-    fun injectSeat(occupied: Boolean) = signals?.post { onSeatRaw(!occupied) }
+    /** A fake seat value is already "occupied", so it skips the SDK version correction. */
+    fun injectSeat(occupied: Boolean) = signals?.post { onSeat(occupied) }
     fun injectBrake(pressed: Boolean) = signals?.post { onBrakeRaw(pressed) }
     fun injectDoor(open: Boolean) = signals?.post { onDoorRaw(if (open) 1 else 0) }
     fun injectOdometer(km: Float) = signals?.post { onOdometerRaw(km) }
@@ -272,3 +276,13 @@ class VehicleGateway(context: Context) {
         val DRIVER_DOOR = DoorArea(DoorValue.ROW_1_LEFT)
     }
 }
+
+/** The Vehicle SDK version whose seat occupancy is reversed (true = empty; confirmed by the contest office, fixed in the next version). */
+internal const val SEAT_OCCUPANCY_REVERSED_SDK = "2.3.2"
+
+/**
+ * Seat occupancy as specified (true = occupied). Only [SEAT_OCCUPANCY_REVERSED_SDK] reports it reversed,
+ * so only that version is inverted. After an SDK upgrade, check the value again with the Virtual Console.
+ */
+internal fun seatOccupiedFromSdk(raw: Boolean, sdkVersion: String): Boolean =
+    if (sdkVersion == SEAT_OCCUPANCY_REVERSED_SDK) !raw else raw

@@ -25,10 +25,14 @@ android {
         // value into the classes that use it, and an incremental build would not pick up a new URL.
         val serverUrl = providers.gradleProperty("bobcar.serverUrl").getOrElse("")
         buildConfigField("String", "SERVER_URL", "String.valueOf(\"$serverUrl\")")
+
+        // Pleos Vehicle SDK version (libs.versions.toml). The gateway corrects SDK bugs of a specific version with it.
+        buildConfigField("String", "VEHICLE_SDK_VERSION", "\"${libs.versions.vehicleSdk.get()}\"")
     }
 
     buildTypes {
         release {
+            isDebuggable = false
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

@@ -1,13 +1,19 @@
 package com.bobcar.vehicle.upload
 
+import com.bobcar.vehicle.checkin.isAgreed
+import com.bobcar.vehicle.data.DriverConsentDao
 import com.bobcar.vehicle.data.UploadQueueDao
 
 /**
- * Drains the upload queue oldest first, one batch at a time. Pure logic over the DAO and an
+ * Drains the upload queue oldest first, one batch at a time. Pure logic over the DAOs and an
  * [UploadSender], so it is tested without WorkManager or a network.
+ *
+ * Only records of drivers who agreed to collection are sent (CLAUDE.md rule 6). The rest, and records
+ * with no driver yet, stay in the queue and go out on a later run once the driver agrees.
  */
 class Uploader(
     private val dao: UploadQueueDao,
+    private val consents: DriverConsentDao,
     private val sender: UploadSender,
     private val batchSize: Int = BATCH_SIZE,
     private val now: () -> Long = System::currentTimeMillis,
@@ -16,7 +22,7 @@ class Uploader(
     sealed interface Outcome {
         val sentCount: Int
 
-        /** Queue empty (or only items the server refused too often). */
+        /** Nothing left to send now (queue empty, or only records waiting for consent or refused too often). */
         data class Done(override val sentCount: Int) : Outcome
 
         /** Temporary failure: WorkManager should retry later with backoff. */
@@ -31,8 +37,10 @@ class Uploader(
 
     suspend fun run(): Outcome {
         var sent = 0
+        val agreed = consents.getAll().filter { it.isAgreed() }.map { it.driverId }
+        if (agreed.isEmpty()) return Outcome.Done(0)
         while (true) {
-            val batch = dao.getSendable(batchSize, MAX_ATTEMPTS)
+            val batch = dao.getSendable(batchSize, MAX_ATTEMPTS, agreed)
             if (batch.isEmpty()) return Outcome.Done(sent)
             val ids = batch.map { it.id }
             when (val result = sender.send(batch)) {

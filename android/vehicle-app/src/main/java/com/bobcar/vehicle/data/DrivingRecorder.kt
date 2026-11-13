@@ -16,9 +16,14 @@ import org.json.JSONObject
  * so a record is never kept without its upload entry (works with the server off, CLAUDE.md rule 8).
  * Writes run one at a time in arrival order. [onStored] runs after each successful write
  * (used to request an upload).
+ *
+ * Each queue entry carries the driver checked in at the moment it is written ([currentDriver]), so the
+ * upload can hold back the records of drivers who have not agreed to collection. [assignDriver] runs on
+ * the same write order, so an event stored around a check-in change is never missed.
  */
 class DrivingRecorder(
     private val db: BobCarDatabase,
+    private val currentDriver: () -> String? = { null },
     private val onStored: () -> Unit = {},
 ) {
 
@@ -32,8 +37,32 @@ class DrivingRecorder(
     }
 
     /** Other vehicle events (e.g. driver provisional / confirmed). [occurredAt] is wall-clock. No personal data in [detail]. */
-    fun record(type: String, detail: String?, occurredAt: Long) {
+    fun record(type: String, detail: String?, occurredAt: Long) = store(type, detail, occurredAt, KIND_VEHICLE_EVENT, null)
+
+    /** [driverId] agreed to collection. Queued as that driver's own record (it never follows a check-in change). */
+    fun recordConsent(driverId: String, detail: String, occurredAt: Long) =
+        store(TYPE_CONSENT_AGREED, detail, occurredAt, KIND_CONSENT, driverId)
+
+    /**
+     * The driver of the stay in the seat that began at [since] (wall-clock) is now [driverId]:
+     * unsent events stored since then become that driver's.
+     */
+    fun assignDriver(since: Long, driverId: String?) {
         scope.launch {
+            try {
+                val changed = db.uploadQueueDao().assignDriver(since, driverId)
+                Log.d(TAG, "queue driver=${driverId ?: "none"} rows=$changed")
+            } catch (e: Exception) {
+                Log.e(TAG, "queue driver assign failed", e)
+                return@launch
+            }
+            onStored()
+        }
+    }
+
+    private fun store(type: String, detail: String?, occurredAt: Long, kind: String, fixedDriverId: String?) {
+        scope.launch {
+            val driverId = fixedDriverId ?: currentDriver()
             try {
                 db.withTransaction {
                     val id = db.vehicleEventDao().insert(
@@ -41,7 +70,7 @@ class DrivingRecorder(
                     )
                     db.uploadQueueDao().insert(
                         UploadQueueEntity(
-                            kind = KIND_VEHICLE_EVENT,
+                            kind = kind,
                             refId = id,
                             payloadJson = JSONObject()
                                 .put("eventId", id)
@@ -50,10 +79,11 @@ class DrivingRecorder(
                                 .put("detail", detail ?: JSONObject.NULL)
                                 .toString(),
                             createdAt = System.currentTimeMillis(),
+                            driverId = driverId,
                         ),
                     )
                 }
-                Log.d(TAG, "stored $type")
+                Log.d(TAG, "stored $type driver=${driverId ?: "none"}")
             } catch (e: Exception) {
                 Log.e(TAG, "store $type failed", e)
                 return@launch
@@ -77,8 +107,10 @@ class DrivingRecorder(
             "AppResumed" to "state=${event.state::class.simpleName}${if (event.gearKnown) "" else " gear=unknown"}"
     }
 
-    private companion object {
-        const val TAG = "BOBCar.Recorder"
+    companion object {
+        private const val TAG = "BOBCar.Recorder"
         const val KIND_VEHICLE_EVENT = "vehicle_event"
+        const val KIND_CONSENT = "consent"
+        const val TYPE_CONSENT_AGREED = "ConsentAgreed"
     }
 }
