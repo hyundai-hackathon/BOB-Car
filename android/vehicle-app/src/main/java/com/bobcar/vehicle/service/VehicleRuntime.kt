@@ -46,6 +46,7 @@ object VehicleRuntime {
     private var navi: NaviGateway? = null
     private var recorder: DrivingRecorder? = null
     private var recordListener: ((DrivingEvent) -> Unit)? = null
+    private var naviRefreshListener: ((DrivingEvent) -> Unit)? = null
     private var tripRecorder: TripRecorder? = null
     private var unregisterFakeSignals: (() -> Unit)? = null
 
@@ -78,6 +79,10 @@ object VehicleRuntime {
         val v = VehicleGateway(app).also { vehicle = it }
         val c = CarPropertyGateway(app).also { carProperty = it }
         val n = NaviGateway(app).also { navi = it }
+        // Bookmarks have no change event: read them again on every trip start (purpose suggestion)
+        val bookmarkRefresh: (DrivingEvent) -> Unit = { if (it is DrivingEvent.TripStarted) n.refreshBookmarks() }
+        naviRefreshListener = bookmarkRefresh
+        monitor.addEventListener(bookmarkRefresh)
         val hooks = FakeHooks(
             continueTapped = monitor::onContinueTapped,
             confirmDriver = ::confirmDriver,
@@ -113,6 +118,7 @@ object VehicleRuntime {
         unregisterFakeSignals?.invoke()
         monitor.stop()
         recordListener?.let { monitor.removeEventListener(it) }
+        naviRefreshListener?.let { monitor.removeEventListener(it) }
         tripRecorder?.let { monitor.removeEventListener(it.onDrivingEvent) }
         val v = vehicle
         val c = carProperty
@@ -132,6 +138,7 @@ object VehicleRuntime {
         navi = null
         recorder = null
         recordListener = null
+        naviRefreshListener = null
         tripRecorder = null
         unregisterFakeSignals = null
     }
