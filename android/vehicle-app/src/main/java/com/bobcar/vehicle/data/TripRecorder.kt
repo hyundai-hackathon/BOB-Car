@@ -81,7 +81,8 @@ class TripRecorder(
                 // Charged or moved while seated with no trip (no boarding in between): last chance to see it
                 if (db.tripDao().getActive() == null) gaps.checkNow(EnergySnapshotEntity.KIND_TRIP_START, at, reading)
                 val trip = book.onTripStarted(at, event.mergedWithPrevious, reading, checkinDriver())
-                Log.i(TAG, "trip #${trip.id} running${if (event.mergedWithPrevious) " (merged)" else ""} ${describe(trip)}")
+                val merged = event.mergedWithPrevious && trip.startedAt != at
+                Log.i(TAG, "trip #${trip.id} running${if (merged) " (merged)" else ""} ${describe(trip)}")
             }
             is DrivingEvent.EndCountdownStarted -> write("end card") { prepareEndChoice() }
             is DrivingEvent.TripEnded -> write("trip end") {

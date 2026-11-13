@@ -1,6 +1,7 @@
 package com.bobcar.vehicle.data
 
 import androidx.room.withTransaction
+import com.bobcar.vehicle.energy.GapCheck
 import com.bobcar.vehicle.trip.Purpose
 
 /**
@@ -41,6 +42,8 @@ class TripBook(private val db: BobCarDatabase) {
     /**
      * Starts a trip, or continues the last one when [merged]. Returns the running trip.
      * [driver] goes on a new trip; a continued trip keeps its driver (merging needs the same driver).
+     * A drive nobody recorded since the last trip ended is not continued: a new trip starts, so those
+     * kilometres stay out of the logbook distance (they are reported as an unrecorded drive instead).
      */
     suspend fun onTripStarted(
         at: Long,
@@ -52,7 +55,7 @@ class TripBook(private val db: BobCarDatabase) {
         trips.getActive()?.let { return@withTransaction it }
 
         // A continued trip takes guidance set up in P before leaving again (latest wins, like during a trip)
-        val trip = (if (merged) reopenLastEnded()?.let { withRoute(it, pendingRoute) } else null) ?: run {
+        val trip = (if (merged) reopenLastEnded(reading)?.let { withRoute(it, pendingRoute) } else null) ?: run {
             val route = pendingRoute
             val new = TripEntity(
                 status = TripEntity.STATUS_ACTIVE,
@@ -179,8 +182,9 @@ class TripBook(private val db: BobCarDatabase) {
         }
     }
 
-    private suspend fun reopenLastEnded(): TripEntity? {
+    private suspend fun reopenLastEnded(reading: Reading): TripEntity? {
         val last = trips.getLastEnded() ?: return null
+        if (GapCheck.unrecordedKm(last.endOdometerKm, reading.odometerKm) != null) return null
         // The purpose is decided again on the next trip-end card (a deleted personal destination stays deleted)
         val reopened = last.copy(
             status = TripEntity.STATUS_ACTIVE,

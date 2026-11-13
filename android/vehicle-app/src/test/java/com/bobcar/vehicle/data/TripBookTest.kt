@@ -272,6 +272,32 @@ class TripBookTest {
     }
 
     @Test
+    fun mergedStartAfterAnUnrecordedDriveStartsANewTrip() = runTest {
+        val first = book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(110f))
+
+        // 6 km were driven with no record before leaving again
+        val second = book.onTripStarted(2_300, merged = true, reading(116f))
+
+        assertTrue(second.id != first.id)
+        assertEquals(2_300L, second.startedAt)
+        assertEquals(116f, second.startOdometerKm)
+        val firstStored = db.tripDao().getById(first.id)!!
+        assertEquals(TripEntity.STATUS_ENDED, firstStored.status)
+        assertEquals(10f, firstStored.distanceKm())
+    }
+
+    @Test
+    fun mergedStartWithinHalfAKilometreStillContinuesTheTrip() = runTest {
+        val first = book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(110f))
+
+        val merged = book.onTripStarted(2_300, merged = true, reading(110.4f))
+
+        assertEquals(first.id, merged.id)
+    }
+
+    @Test
     fun appResumedWhileDrivingContinuesTheStoredTrip() = runTest {
         val trip = book.onTripStarted(1_000, merged = false, reading(100f))
 
