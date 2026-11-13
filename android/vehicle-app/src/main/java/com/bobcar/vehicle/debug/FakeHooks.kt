@@ -8,4 +8,6 @@ class FakeHooks(
     val confirmDriver: (String) -> Unit,
     /** Mock reservation for now: a driver ID, or null for no reservation. */
     val setReservation: (String?) -> Unit,
+    /** Forget this driver's consent answer (try the first check-in again). */
+    val resetConsent: (String) -> Unit,
 )

@@ -76,6 +76,7 @@ object VehicleRuntime {
             continueTapped = monitor::onContinueTapped,
             confirmDriver = ::confirmDriver,
             setReservation = trips::setReservationNow,
+            resetConsent = trips::resetConsent,
         )
         unregisterFakeSignals = FakeSignalInjector.register(app, signals, v, c, hooks)
 
@@ -92,6 +93,11 @@ object VehicleRuntime {
     fun confirmDriver(driverId: String) {
         monitor.onDriverConfirmed(driverId)
         tripRecorder?.confirmDriver(driverId)
+    }
+
+    /** Consent card answered by [driverId]: [동의] (agreed) or [나중에]. */
+    fun answerConsent(driverId: String, agreed: Boolean) {
+        tripRecorder?.answerConsent(driverId, agreed)
     }
 
     @Synchronized

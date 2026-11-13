@@ -97,6 +97,23 @@ interface DriverDao {
 }
 
 @Dao
+interface DriverConsentDao {
+    @Upsert
+    suspend fun upsert(consent: DriverConsentEntity)
+
+    @Query("SELECT * FROM driver_consent WHERE driverId = :driverId")
+    suspend fun get(driverId: String): DriverConsentEntity?
+
+    /** All answers, for the consent card (a handful of drivers per vehicle). */
+    @Query("SELECT * FROM driver_consent")
+    fun allFlow(): Flow<List<DriverConsentEntity>>
+
+    /** Debug: forget the answer so the first check-in can be tried again. */
+    @Query("DELETE FROM driver_consent WHERE driverId = :driverId")
+    suspend fun delete(driverId: String): Int
+}
+
+@Dao
 interface ReservationDao {
     @Insert
     suspend fun insert(reservation: ReservationEntity): Long

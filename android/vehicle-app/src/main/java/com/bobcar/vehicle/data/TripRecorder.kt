@@ -1,6 +1,7 @@
 package com.bobcar.vehicle.data
 
 import android.util.Log
+import com.bobcar.vehicle.checkin.ConsentNotice
 import com.bobcar.vehicle.checkin.DriverCheckin
 import com.bobcar.vehicle.checkin.DriverDefaults
 import com.bobcar.vehicle.driving.DrivingEvent
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
  * - driver confirmed: check-in confirmed; a running trip gets the driver too
  * - CheckinClosed while unconfirmed: the default is recorded as provisional ([recordEvent])
  * - TripStarted: the trip gets the check-in's driver
+ * - consent card answered: stored per driver (records of drivers who did not agree stay on the device)
  *
  * Readings are taken from the signal snapshot on the signal thread when the event happens, then
  * everything is written one at a time in arrival order (so the check-in is always ready before the
@@ -117,6 +119,30 @@ class TripRecorder(
         Log.i(TAG, "driver confirmed: $driverId (check-in=${state != null}, trip=${trip?.id ?: "none"})")
     }
 
+    /**
+     * The consent card was answered. [agreed] stores AGREED and records [EVENT_CONSENT_AGREED] (the server
+     * clears "동의 대기" with it); [나중에] stores DEFERRED on the device only and asks again next check-in.
+     */
+    fun answerConsent(driverId: String, agreed: Boolean) = write("consent") {
+        if (db.driverDao().getActiveById(driverId) == null) {
+            Log.w(TAG, "consent ignored: $driverId is not an active driver")
+            return@write
+        }
+        val at = System.currentTimeMillis()
+        val status = if (agreed) DriverConsentEntity.STATUS_AGREED else DriverConsentEntity.STATUS_DEFERRED
+        db.driverConsentDao().upsert(DriverConsentEntity(driverId, status, at, ConsentNotice.VERSION))
+        checkin.consentAnswered(driverId)
+        if (agreed) recordEvent(EVENT_CONSENT_AGREED, "driver=$driverId version=${ConsentNotice.VERSION}", at)
+        Log.i(TAG, "consent $status: $driverId (notice v${ConsentNotice.VERSION})")
+    }
+
+    /** Debug: forgets the driver's consent answer, so the first check-in can be tried again. */
+    fun resetConsent(driverId: String) = write("consent reset") {
+        val removed = db.driverConsentDao().delete(driverId)
+        checkin.consentReset(driverId)
+        Log.i(TAG, "consent reset: $driverId (removed=$removed)")
+    }
+
     /** Debug: the mock reservation covering now is replaced (driver ID) or removed (null). */
     fun setReservationNow(driverId: String?) = write("reservation") {
         LocalMockData.setReservationNow(db, System.currentTimeMillis(), driverId)
@@ -171,5 +197,6 @@ class TripRecorder(
         const val TAG = "BOBCar.Trip"
         const val EVENT_DRIVER_PROVISIONAL = "DriverProvisional"
         const val EVENT_DRIVER_CONFIRMED = "DriverConfirmed"
+        const val EVENT_CONSENT_AGREED = "ConsentAgreed"
     }
 }
