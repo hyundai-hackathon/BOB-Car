@@ -7,20 +7,35 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** Trip purpose in the logbook (국세청 운행기록부 업무 구분). Stored by name. */
+/**
+ * Trip purpose in the logbook. The tax logbook form (국세청 업무용승용차 운행기록부) splits business
+ * distance into 출·퇴근용 ([COMMUTE]) and 일반 업무용 ([BUSINESS]). Stored by name.
+ */
 enum class Purpose { BUSINESS, COMMUTE, PERSONAL }
 
 /** Why a purpose was suggested. */
-enum class PurposeSource { CUSTOMER, COMMUTE_BOOKMARK, LAST_PURPOSE, FALLBACK }
+enum class PurposeSource {
+    /** Going to the navigation bookmark HOME. */
+    HOME,
+
+    /** Going to the bookmark OFFICE right after a commute trip (the car was taken home): going to work. */
+    OFFICE_AFTER_COMMUTE,
+
+    /** Going to the bookmark OFFICE otherwise: coming back from business. */
+    OFFICE,
+
+    /** Any other destination, or none. */
+    DEFAULT,
+}
 
 data class DefaultPurpose(val purpose: Purpose, val source: PurposeSource)
 
 /**
  * The purpose suggested on the trip-end card. The only place this rule lives (design-review F6):
- * 1. destination is on the customer list → BUSINESS
- * 2. destination is the navigation bookmark HOME or OFFICE → COMMUTE
- * 3. otherwise (or no destination) → the previous trip's purpose
- * 4. no previous purpose → BUSINESS (a company car)
+ * 1. destination is the navigation bookmark HOME → COMMUTE
+ * 2. destination is the bookmark OFFICE → COMMUTE when the previous trip was a commute, else BUSINESS
+ * 3. anything else, or no destination → BUSINESS (a company car)
+ * PERSONAL is never suggested: only the driver picks it.
  */
 object PurposeDefaults {
 
@@ -29,16 +44,16 @@ object PurposeDefaults {
 
     fun resolve(
         destination: NaviPlace?,
-        customers: List<NaviPlace>,
-        commutePlaces: List<NaviPlace>,
+        home: NaviPlace?,
+        office: NaviPlace?,
         lastPurpose: Purpose?,
     ): DefaultPurpose = when {
-        destination != null && customers.any { samePlace(destination, it) } ->
-            DefaultPurpose(Purpose.BUSINESS, PurposeSource.CUSTOMER)
-        destination != null && commutePlaces.any { samePlace(destination, it) } ->
-            DefaultPurpose(Purpose.COMMUTE, PurposeSource.COMMUTE_BOOKMARK)
-        lastPurpose != null -> DefaultPurpose(lastPurpose, PurposeSource.LAST_PURPOSE)
-        else -> DefaultPurpose(Purpose.BUSINESS, PurposeSource.FALLBACK)
+        destination != null && home != null && samePlace(destination, home) ->
+            DefaultPurpose(Purpose.COMMUTE, PurposeSource.HOME)
+        destination != null && office != null && samePlace(destination, office) ->
+            if (lastPurpose == Purpose.COMMUTE) DefaultPurpose(Purpose.COMMUTE, PurposeSource.OFFICE_AFTER_COMMUTE)
+            else DefaultPurpose(Purpose.BUSINESS, PurposeSource.OFFICE)
+        else -> DefaultPurpose(Purpose.BUSINESS, PurposeSource.DEFAULT)
     }
 
     /** Same poiId, or within [SAME_PLACE_METERS], or the same name ignoring spaces and case. */

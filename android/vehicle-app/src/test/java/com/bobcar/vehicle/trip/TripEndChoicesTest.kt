@@ -13,7 +13,7 @@ class TripEndChoicesTest {
         driverId = "drv-001",
         driverConfirmed = false,
         purpose = Purpose.BUSINESS,
-        purposeSource = PurposeSource.CUSTOMER,
+        purposeSource = PurposeSource.DEFAULT,
     )
 
     @Test

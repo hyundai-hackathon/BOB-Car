@@ -32,14 +32,6 @@ class BobCarDatabaseTest {
     }
 
     @Test
-    fun mockCustomersAreSeededOnce() = runTest {
-        LocalMockData.seed(db, now = 1_000)
-        LocalMockData.seed(db, now = 2_000)
-
-        assertEquals(LocalMockData.customers.toSet(), db.customerDao().getAll().toSet())
-    }
-
-    @Test
     fun eventAndQueueEntryAreStoredTogetherAndCounted() = runTest {
         db.withTransaction {
             val id = db.vehicleEventDao().insert(VehicleEventEntity(type = "TripStarted", occurredAt = 1_000))

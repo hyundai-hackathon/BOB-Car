@@ -231,10 +231,11 @@ class TripRecorder(
 
     private suspend fun suggestEndChoice(trip: TripEntity): EndChoice {
         val driverId = trip.driverId ?: checkin.current?.driverId
+        val commute = signals.snapshot.value.commutePlaces
         val suggestion = PurposeDefaults.resolve(
             destination = destinationOf(trip),
-            customers = db.customerDao().getAll().map { NaviPlace(it.name, it.poiId, it.latitude, it.longitude) },
-            commutePlaces = signals.snapshot.value.commutePlaces.orEmpty(),
+            home = commute?.home,
+            office = commute?.office,
             lastPurpose = db.tripDao().getLastEndedWithPurpose()?.purpose?.let(::purposeOf),
         )
         return EndChoice(

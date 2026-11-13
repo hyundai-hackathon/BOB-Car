@@ -22,6 +22,9 @@ data class NaviPlace(
     val longitude: Double? = null,
 )
 
+/** The driver's navigation bookmarks HOME and OFFICE; null when that one is not set. */
+data class CommutePlaces(val home: NaviPlace?, val office: NaviPlace?)
+
 /** Latest cleaned value of every signal. null = not received yet. */
 data class VehicleSnapshot(
     val driverSeatOccupied: Boolean? = null,
@@ -34,8 +37,8 @@ data class VehicleSnapshot(
     val lastRouteStart: RouteStart? = null,
     /** Details (poiId, coordinates) of the latest guidance destination. Empty answers keep the previous one. */
     val destinationPlace: NaviPlace? = null,
-    /** Navigation bookmarks HOME and OFFICE that are set. Re-read at every trip start (no change event, day1-check 14-5). */
-    val commutePlaces: List<NaviPlace>? = null,
+    /** Navigation bookmarks HOME and OFFICE. null = not read yet. Re-read at every trip start (no change event, day1-check 14-5). */
+    val commutePlaces: CommutePlaces? = null,
 ) {
     /** Remaining battery energy = SoC × capacity (the console's Energy slider is not used, B10). */
     val batteryEnergyWh: Float?

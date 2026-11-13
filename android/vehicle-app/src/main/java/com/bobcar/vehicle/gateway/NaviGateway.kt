@@ -9,6 +9,7 @@ import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.content.Context
 import android.util.Log
+import com.bobcar.vehicle.signal.CommutePlaces
 import com.bobcar.vehicle.signal.NaviPlace
 import com.bobcar.vehicle.signal.RouteStart
 import com.bobcar.vehicle.signal.SignalEvent
@@ -87,13 +88,15 @@ class NaviGateway(context: Context) {
 
         override fun onBookmarkInfo(bookmarkInfoList: List<BookmarkInfo>) {
             // HOME / OFFICE entries come even when empty (no name) until the driver sets them
-            val commute = bookmarkInfoList
-                .filter { it.category == BookmarkType.HOME || it.category == BookmarkType.OFFICE }
-                .mapNotNull { naviPlace(it.name, it.poiId, it.latitude, it.longitude) }
-            Log.i(TAG, "onBookmarkInfo total=${bookmarkInfoList.size} commute set=${commute.size}")
+            fun placeOf(type: BookmarkType) = bookmarkInfoList
+                .filter { it.category == type }
+                .firstNotNullOfOrNull { naviPlace(it.name, it.poiId, it.latitude, it.longitude) }
+            val commute = CommutePlaces(home = placeOf(BookmarkType.HOME), office = placeOf(BookmarkType.OFFICE))
+            val summary = "home=${commute.home != null} office=${commute.office != null}"
+            Log.i(TAG, "onBookmarkInfo total=${bookmarkInfoList.size} $summary")
             val s = signals ?: return
             s.post {
-                s.publish("commutePlaces count=${commute.size}", { it.copy(commutePlaces = commute) }, null)
+                s.publish("commutePlaces $summary", { it.copy(commutePlaces = commute) }, null)
             }
         }
 

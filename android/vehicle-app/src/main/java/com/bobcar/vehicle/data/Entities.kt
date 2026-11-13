@@ -116,19 +116,6 @@ data class DriverConsentEntity(
     }
 }
 
-/**
- * Customer places: a trip to one of them is suggested as BUSINESS.
- * Local mock until admin-web provides the list. Matched by poiId, coordinates or name (trip PurposeDefaults).
- */
-@Entity(tableName = "customer")
-data class CustomerEntity(
-    @PrimaryKey val id: String,
-    val name: String,
-    val poiId: String? = null,
-    val latitude: Double? = null,
-    val longitude: Double? = null,
-)
-
 /** Reservation of this vehicle (local mock until the server provides it). */
 @Entity(tableName = "reservation", indices = [Index("startAt"), Index("endAt")])
 data class ReservationEntity(

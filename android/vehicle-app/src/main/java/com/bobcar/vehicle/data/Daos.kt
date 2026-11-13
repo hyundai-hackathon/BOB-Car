@@ -122,17 +122,6 @@ interface DriverConsentDao {
 }
 
 @Dao
-interface CustomerDao {
-    /** Insert customers that are not there yet; existing rows are left alone. */
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertMissing(customers: List<CustomerEntity>): List<Long>
-
-    /** All customers, for the purpose suggestion (a short list). */
-    @Query("SELECT * FROM customer")
-    suspend fun getAll(): List<CustomerEntity>
-}
-
-@Dao
 interface ReservationDao {
     @Insert
     suspend fun insert(reservation: ReservationEntity): Long

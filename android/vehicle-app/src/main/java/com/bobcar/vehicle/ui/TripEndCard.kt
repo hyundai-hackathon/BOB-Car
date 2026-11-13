@@ -262,7 +262,7 @@ private fun TripEndCardPreview() {
         TripEndCard(
             state = DrivingState.EndCountdown(tripStartedAt = 0, deadline = Long.MAX_VALUE),
             trip = previewTrip,
-            choice = EndChoice(1, "drv-001", true, Purpose.BUSINESS, PurposeSource.CUSTOMER),
+            choice = EndChoice(1, "drv-001", true, Purpose.BUSINESS, PurposeSource.DEFAULT),
             drivers = previewDrivers,
             odometerKm = 12_482.4f,
             onContinue = {}, onPurpose = {}, onOpenDrivers = {}, onPickDriver = {}, onCloseDrivers = {},
