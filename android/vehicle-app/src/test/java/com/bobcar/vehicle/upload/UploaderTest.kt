@@ -206,6 +206,25 @@ class UploaderTest {
         assertEquals(1, dao.pendingCountFlow().first())
     }
 
+    // ---------------------------------------------------------------- driver card still open
+
+    @Test
+    fun recordsOfAStayWhoseDriverCardIsOpenWaitUntilItIsAnswered() = runTest {
+        val before = enqueue(1, createdAt = 0) // an earlier stay
+        val stay = enqueue(2, createdAt = 1_000) // Boarded etc., provisionally the default driver's
+        var holdSince: Long? = 1_000
+        val sender = FakeSender()
+        val uploader = Uploader(dao, consents, sender, holdSince = { holdSince })
+
+        assertEquals(Uploader.Outcome.Done(1), uploader.run())
+        assertEquals(listOf(before), sender.batches)
+
+        // Driver confirmed (or the card closed on departure): the stay goes out
+        holdSince = null
+        assertEquals(Uploader.Outcome.Done(2), uploader.run())
+        assertEquals(listOf(before, stay), sender.batches)
+    }
+
     // ---------------------------------------------------------------- server answers per item
 
     @Test

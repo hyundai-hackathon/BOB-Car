@@ -156,14 +156,20 @@ interface UploadQueueDao {
     suspend fun getPending(limit: Int): List<UploadQueueEntity>
 
     /**
-     * Unsent items to send now: records of [driverIds] (drivers who agreed) only, consent records first,
-     * then oldest first, skipping ones the server refused [maxAttempts] times.
+     * Unsent items to send now: records of [driverIds] (drivers who agreed) only, stored before [createdBefore]
+     * (records of a stay whose driver card is still open wait), consent records first, then oldest first,
+     * skipping ones the server refused [maxAttempts] times.
      */
     @Query(
         "SELECT * FROM upload_queue WHERE sentAt IS NULL AND attempts < :maxAttempts AND driverId IN (:driverIds) " +
-            "ORDER BY (kind = 'consent') DESC, id LIMIT :limit",
+            "AND createdAt < :createdBefore ORDER BY (kind = 'consent') DESC, id LIMIT :limit",
     )
-    suspend fun getSendable(limit: Int, maxAttempts: Int, driverIds: List<String>): List<UploadQueueEntity>
+    suspend fun getSendable(
+        limit: Int,
+        maxAttempts: Int,
+        driverIds: List<String>,
+        createdBefore: Long = Long.MAX_VALUE,
+    ): List<UploadQueueEntity>
 
     /**
      * The driver of the stay in the seat that began at [since] is now [driverId] (check-in started or confirmed):

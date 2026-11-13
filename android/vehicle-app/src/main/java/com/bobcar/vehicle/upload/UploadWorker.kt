@@ -8,6 +8,7 @@ import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.data.DrivingRecorder
 import com.bobcar.vehicle.server.ServerClients
 import com.bobcar.vehicle.server.ServerConfig
+import com.bobcar.vehicle.service.VehicleRuntime
 
 /** Runs [Uploader] when the network is up. Logs counts and status only, never record contents. */
 class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -24,6 +25,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             db.driverConsentDao(),
             sender,
             resendConsent = { drivers -> drivers.forEach { DrivingRecorder.requeueConsent(db, it) } },
+            // The driver card is open: this stay's records wait for the real driver
+            holdSince = { VehicleRuntime.checkin.current?.uploadHoldSince },
         )
         val outcome = uploader.run()
         val removed = uploader.cleanUp()
