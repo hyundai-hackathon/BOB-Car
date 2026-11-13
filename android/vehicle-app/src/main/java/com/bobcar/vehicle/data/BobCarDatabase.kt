@@ -16,7 +16,7 @@ import androidx.room.RoomDatabase
         UploadQueueEntity::class,
         DriverConsentEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class BobCarDatabase : RoomDatabase() {

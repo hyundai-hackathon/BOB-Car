@@ -123,15 +123,25 @@ data class ReservationEntity(
     val endAt: Long,
 )
 
-/** Outbox: what still has to be sent to the server. Rows stay until sent, so nothing is lost offline. */
-@Entity(tableName = "upload_queue", indices = [Index("sentAt")])
+/**
+ * Outbox: what still has to be sent to the server. Rows stay until sent, so nothing is lost offline.
+ * A row is sent only when [driverId] is set and that driver agreed to collection (CLAUDE.md rule 6);
+ * otherwise it waits on the device.
+ */
+@Entity(tableName = "upload_queue", indices = [Index("sentAt"), Index("driverId")])
 data class UploadQueueEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** e.g. vehicle_event, trip */
+    /** vehicle_event, consent */
     val kind: String,
     val refId: Long? = null,
     val payloadJson: String,
     val createdAt: Long,
+    /**
+     * Whose record this is: the driver checked in when it was stored (confirmed, or the provisional default).
+     * null = nobody known yet. Unsent vehicle_event rows of the current stay in the seat follow the check-in's
+     * driver ([UploadQueueDao.assignDriver]); consent rows always stay with the driver who answered.
+     */
+    val driverId: String? = null,
     val attempts: Int = 0,
     val lastError: String? = null,
     val sentAt: Long? = null,

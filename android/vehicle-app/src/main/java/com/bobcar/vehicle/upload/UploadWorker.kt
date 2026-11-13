@@ -11,11 +11,12 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     override suspend fun doWork(): Result {
         val serverUrl = UploadScheduler.serverUrl
-        if (serverUrl.isEmpty()) {
-            Log.i(TAG, "server not configured, queue kept")
+        if (!UploadScheduler.serverConfigured) {
+            Log.i(TAG, "server not configured or not allowed, queue kept")
             return Result.success()
         }
-        val uploader = Uploader(BobCarDatabase.get(applicationContext).uploadQueueDao(), HttpUploadSender(serverUrl))
+        val db = BobCarDatabase.get(applicationContext)
+        val uploader = Uploader(db.uploadQueueDao(), db.driverConsentDao(), HttpUploadSender(serverUrl))
         val outcome = uploader.run()
         val removed = uploader.cleanUp()
         return when (outcome) {

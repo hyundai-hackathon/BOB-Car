@@ -108,6 +108,10 @@ interface DriverConsentDao {
     @Query("SELECT * FROM driver_consent")
     fun allFlow(): Flow<List<DriverConsentEntity>>
 
+    /** All answers, for the upload check (a handful of drivers per vehicle). */
+    @Query("SELECT * FROM driver_consent")
+    suspend fun getAll(): List<DriverConsentEntity>
+
     /** Debug: forget the answer so the first check-in can be tried again. */
     @Query("DELETE FROM driver_consent WHERE driverId = :driverId")
     suspend fun delete(driverId: String): Int
@@ -136,9 +140,25 @@ interface UploadQueueDao {
     @Query("SELECT * FROM upload_queue WHERE sentAt IS NULL ORDER BY id LIMIT :limit")
     suspend fun getPending(limit: Int): List<UploadQueueEntity>
 
-    /** Unsent items to send now: oldest first, skipping ones the server refused [maxAttempts] times. */
-    @Query("SELECT * FROM upload_queue WHERE sentAt IS NULL AND attempts < :maxAttempts ORDER BY id LIMIT :limit")
-    suspend fun getSendable(limit: Int, maxAttempts: Int): List<UploadQueueEntity>
+    /**
+     * Unsent items to send now: records of [driverIds] (drivers who agreed) only, oldest first,
+     * skipping ones the server refused [maxAttempts] times.
+     */
+    @Query(
+        "SELECT * FROM upload_queue WHERE sentAt IS NULL AND attempts < :maxAttempts AND driverId IN (:driverIds) " +
+            "ORDER BY id LIMIT :limit",
+    )
+    suspend fun getSendable(limit: Int, maxAttempts: Int, driverIds: List<String>): List<UploadQueueEntity>
+
+    /**
+     * The driver of the stay in the seat that began at [since] is now [driverId] (check-in started or confirmed):
+     * unsent vehicle events stored since then become that driver's. Consent rows keep their driver.
+     */
+    @Query(
+        "UPDATE upload_queue SET driverId = :driverId " +
+            "WHERE sentAt IS NULL AND kind = 'vehicle_event' AND createdAt >= :since",
+    )
+    suspend fun assignDriver(since: Long, driverId: String?): Int
 
     @Query("UPDATE upload_queue SET sentAt = :sentAt WHERE id IN (:ids)")
     suspend fun markSent(ids: List<Long>, sentAt: Long)

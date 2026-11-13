@@ -56,13 +56,19 @@ object VehicleRuntime {
         val app = context.applicationContext
 
         val db = BobCarDatabase.get(app)
-        val rec = DrivingRecorder(db) { UploadScheduler.request(app) }
+        // Queue entries carry the checked-in driver, so the upload can hold back drivers who did not agree
+        val rec = DrivingRecorder(db, currentDriver = { checkin.current?.driverId }) { UploadScheduler.request(app) }
         val listener: (DrivingEvent) -> Unit = rec::record
         recorder = rec
         recordListener = listener
         monitor.addEventListener(listener)
         // Trip rows (logbook): registered before monitor.start so the first AppResumed is seen
-        val trips = TripRecorder(db, signals, checkin, DriverDefaults(db), rec::record).also { tripRecorder = it }
+        val trips = TripRecorder(
+            db, signals, checkin, DriverDefaults(db),
+            recordEvent = rec::record,
+            recordConsent = rec::recordConsent,
+            assignDriver = rec::assignDriver,
+        ).also { tripRecorder = it }
         monitor.addEventListener(trips.onDrivingEvent)
         trips.start()
         monitor.start()
