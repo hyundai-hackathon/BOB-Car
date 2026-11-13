@@ -83,14 +83,14 @@ class GapDetector(
                 recordEvent(
                     EVENT_CHARGE,
                     "gainedPercent=${it.gainedPercent} from=${last.socPercent} to=${reading.socPercent} " +
-                        "kwh=${it.kwh?.let(::twoDecimals) ?: "unknown"} foundAt=$kind since=${last.kind}",
+                        "kwh=${it.kwh?.let(::twoDecimals) ?: "unknown"} foundAt=$kind since=${last.kind} sinceAt=${last.takenAt}",
                     at,
                 )
             }
             km?.let {
                 recordEvent(
                     EVENT_UNRECORDED_DRIVE,
-                    "km=${twoDecimals(it)} from=${last.odometerKm} to=${reading.odometerKm} foundAt=$kind since=${last.kind}",
+                    "km=${twoDecimals(it)} from=${last.odometerKm} to=${reading.odometerKm} foundAt=$kind since=${last.kind} sinceAt=${last.takenAt}",
                     at,
                 )
             }
