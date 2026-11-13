@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import * as logger from "firebase-functions/logger";
 import { requireIdToken } from "./auth";
 import { COL, db } from "./db";
+import { checkPayment } from "./reconcile";
 import { ensureSeeded } from "./seed";
 import { closeStaleTrips } from "./trips";
 import { isObject, processUpload, UploadError } from "./uploads";
@@ -117,7 +118,8 @@ export function createApp(options: AppOptions): express.Express {
       paidAt: body.paidAt,
       createdAt: Date.now(),
     });
-    res.status(201).json({ transactionId: ref.id });
+    // Expense check ①: flagged unless a charge the vehicle found explains it
+    res.status(201).json({ transactionId: ref.id, flag: await checkPayment(ref.id) });
   });
 
   if (options.dev) {
