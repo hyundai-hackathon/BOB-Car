@@ -34,6 +34,10 @@ interface TripDao {
 
     @Query("SELECT * FROM trip WHERE status = 'ENDED' ORDER BY endedAt DESC LIMIT 1")
     fun lastEndedFlow(): Flow<TripEntity?>
+
+    /** The most recent trip that has a driver (confirmed or provisional): the previous driver. */
+    @Query("SELECT * FROM trip WHERE driverId IS NOT NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun getLastWithDriver(): TripEntity?
 }
 
 @Dao
@@ -64,6 +68,9 @@ interface VehicleBaselineDao {
 
     @Upsert
     suspend fun upsert(baseline: VehicleBaselineEntity)
+
+    @Query("SELECT * FROM vehicle_baseline WHERE id = ${VehicleBaselineEntity.SINGLE_ROW_ID}")
+    fun flow(): Flow<VehicleBaselineEntity?>
 }
 
 @Dao
@@ -73,6 +80,37 @@ interface DriverDao {
 
     @Query("SELECT * FROM driver WHERE active = 1 ORDER BY name")
     suspend fun getActive(): List<DriverEntity>
+
+    /** Insert drivers that are not there yet; existing rows are left alone. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertMissing(drivers: List<DriverEntity>): List<Long>
+
+    /** For the driver list on screen, in registration (ID) order. */
+    @Query("SELECT * FROM driver WHERE active = 1 ORDER BY id")
+    fun activeFlow(): Flow<List<DriverEntity>>
+
+    @Query("SELECT * FROM driver WHERE id = :id AND active = 1")
+    suspend fun getActiveById(id: String): DriverEntity?
+
+    @Query("SELECT COUNT(*) FROM driver")
+    suspend fun count(): Int
+}
+
+@Dao
+interface DriverConsentDao {
+    @Upsert
+    suspend fun upsert(consent: DriverConsentEntity)
+
+    @Query("SELECT * FROM driver_consent WHERE driverId = :driverId")
+    suspend fun get(driverId: String): DriverConsentEntity?
+
+    /** All answers, for the consent card (a handful of drivers per vehicle). */
+    @Query("SELECT * FROM driver_consent")
+    fun allFlow(): Flow<List<DriverConsentEntity>>
+
+    /** Debug: forget the answer so the first check-in can be tried again. */
+    @Query("DELETE FROM driver_consent WHERE driverId = :driverId")
+    suspend fun delete(driverId: String): Int
 }
 
 @Dao
@@ -83,6 +121,10 @@ interface ReservationDao {
     /** The reservation covering [at], if any (start inclusive, end exclusive). */
     @Query("SELECT * FROM reservation WHERE startAt <= :at AND :at < endAt ORDER BY startAt DESC LIMIT 1")
     suspend fun getAt(at: Long): ReservationEntity?
+
+    /** Removes the reservations covering [at] (debug: test the no-reservation case). */
+    @Query("DELETE FROM reservation WHERE startAt <= :at AND :at < endAt")
+    suspend fun deleteAt(at: Long): Int
 }
 
 @Dao

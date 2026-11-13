@@ -1,7 +1,6 @@
 package com.bobcar.vehicle.debug
 
 import android.content.Context
-import com.bobcar.vehicle.driving.DrivingMonitor
 import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.signal.VehicleSignals
@@ -14,6 +13,6 @@ object FakeSignalInjector {
         signals: VehicleSignals,
         vehicle: VehicleGateway,
         carProperty: CarPropertyGateway,
-        monitor: DrivingMonitor,
+        hooks: FakeHooks,
     ): () -> Unit = {}
 }

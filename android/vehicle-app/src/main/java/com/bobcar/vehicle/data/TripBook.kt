@@ -14,6 +14,9 @@ class TripBook(private val db: BobCarDatabase) {
     /** What navigation guidance said when it started. */
     data class Route(val destinationName: String, val tollFare: Int)
 
+    /** Who drives: confirmed on the driver card, or the default recorded as provisional. */
+    data class DriverChoice(val driverId: String, val provisional: Boolean)
+
     private val trips = db.tripDao()
     private val baselines = db.vehicleBaselineDao()
 
@@ -23,8 +26,16 @@ class TripBook(private val db: BobCarDatabase) {
      */
     private var pendingRoute: Route? = null
 
-    /** Starts a trip, or continues the last one when [merged]. Returns the running trip. */
-    suspend fun onTripStarted(at: Long, merged: Boolean, reading: Reading): TripEntity = db.withTransaction {
+    /**
+     * Starts a trip, or continues the last one when [merged]. Returns the running trip.
+     * [driver] goes on a new trip; a continued trip keeps its driver (merging needs the same driver).
+     */
+    suspend fun onTripStarted(
+        at: Long,
+        merged: Boolean,
+        reading: Reading,
+        driver: DriverChoice? = null,
+    ): TripEntity = db.withTransaction {
         // Already running (e.g. app restarted mid-trip): keep it, never open a second one
         trips.getActive()?.let { return@withTransaction it }
 
@@ -34,6 +45,8 @@ class TripBook(private val db: BobCarDatabase) {
                 status = TripEntity.STATUS_ACTIVE,
                 startedAt = at,
                 startOdometerKm = reading.odometerKm,
+                driverId = driver?.driverId,
+                driverProvisional = driver?.provisional ?: true,
                 destinationName = route?.destinationName?.takeIf { it.isNotBlank() },
                 expectedTollFare = route?.tollFare,
             )
@@ -55,6 +68,14 @@ class TripBook(private val db: BobCarDatabase) {
             destinationName = route.destinationName.takeIf { it.isNotBlank() },
             expectedTollFare = route.tollFare,
         )
+        trips.update(updated)
+        return updated
+    }
+
+    /** The driver was confirmed while a trip runs: the running trip gets that driver, no longer provisional. */
+    suspend fun onDriverConfirmed(driverId: String): TripEntity? {
+        val active = trips.getActive() ?: return null
+        val updated = active.copy(driverId = driverId, driverProvisional = false)
         trips.update(updated)
         return updated
     }
@@ -95,11 +116,17 @@ class TripBook(private val db: BobCarDatabase) {
      * driving with no stored trip → start one now; a stored trip but not driving → it ended while
      * the app was off, close it now ([TripEntity.END_APP_RESTART]). Otherwise nothing changes.
      * [drivingNow] null = gear not known yet: leave everything as it is until it is.
+     * [driver] is used only for a trip started here (nobody saw the driver card).
      */
-    suspend fun onAppResumed(at: Long, drivingNow: Boolean?, reading: Reading): TripEntity? {
+    suspend fun onAppResumed(
+        at: Long,
+        drivingNow: Boolean?,
+        reading: Reading,
+        driver: DriverChoice? = null,
+    ): TripEntity? {
         val active = trips.getActive()
         return when {
-            drivingNow == true && active == null -> onTripStarted(at, merged = false, reading)
+            drivingNow == true && active == null -> onTripStarted(at, merged = false, reading, driver)
             drivingNow == false && active != null -> onTripEnded(at, TripEntity.END_APP_RESTART, reading)
             else -> active
         }

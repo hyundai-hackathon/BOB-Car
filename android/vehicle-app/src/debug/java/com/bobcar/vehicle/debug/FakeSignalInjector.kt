@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.bobcar.vehicle.driving.DrivingMonitor
 import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.signal.RouteStart
@@ -29,7 +28,9 @@ import com.bobcar.vehicle.util.maskForLog
  *   soc      <percent>
  *   route    <tollFare>:<destination>   navigation guidance started (no spaces; e.g. 4700:Incheon-Airport)
  *   continue (no value)       [계속 운행]
- *   driver   <id>             driver confirmed (for trip merging)
+ *   driver   <id>             driver card answered with this driver (e.g. drv-002)
+ *   reservation <id> | none   mock reservation covering now: this driver for today, or none
+ *   consent-reset <id>        forget this driver's consent answer (the consent card shows again)
  */
 object FakeSignalInjector {
 
@@ -41,7 +42,7 @@ object FakeSignalInjector {
         signals: VehicleSignals,
         vehicle: VehicleGateway,
         carProperty: CarPropertyGateway,
-        monitor: DrivingMonitor,
+        hooks: FakeHooks,
     ): () -> Unit {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, intent: Intent) {
@@ -61,8 +62,14 @@ object FakeSignalInjector {
                     "odometer" -> value?.toFloatOrNull()?.let { vehicle.injectOdometer(it) } != null
                     "soc" -> value?.toIntOrNull()?.let { vehicle.injectSoc(it) } != null
                     "route" -> route(signals, value)
-                    "continue" -> true.also { monitor.onContinueTapped() }
-                    "driver" -> value?.takeIf { it.isNotBlank() }?.let { monitor.onDriverConfirmed(it) } != null
+                    "continue" -> true.also { hooks.continueTapped() }
+                    "driver" -> value?.takeIf { it.isNotBlank() }?.let { hooks.confirmDriver(it) } != null
+                    "reservation" -> when {
+                        value.isNullOrBlank() -> false
+                        value == "none" -> true.also { hooks.setReservation(null) }
+                        else -> true.also { hooks.setReservation(value) }
+                    }
+                    "consent-reset" -> value?.takeIf { it.isNotBlank() }?.let { hooks.resetConsent(it) } != null
                     else -> false
                 }
                 if (!ok) Log.w(TAG, "unknown signal/value: $signal=$value")

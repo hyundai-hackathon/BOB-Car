@@ -4,9 +4,12 @@ import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
+import com.bobcar.vehicle.checkin.DriverCheckin
+import com.bobcar.vehicle.checkin.DriverDefaults
 import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.data.DrivingRecorder
 import com.bobcar.vehicle.data.TripRecorder
+import com.bobcar.vehicle.debug.FakeHooks
 import com.bobcar.vehicle.debug.FakeSignalInjector
 import com.bobcar.vehicle.driving.DrivingEvent
 import com.bobcar.vehicle.driving.DrivingMonitor
@@ -29,6 +32,9 @@ object VehicleRuntime {
 
     val signals = VehicleSignals()
     val monitor = DrivingMonitor(signals)
+
+    /** The driver now checked in (for the driver card). */
+    val checkin = DriverCheckin()
 
     /** SDK registration blocks for ~1 s while the services bind, so it runs off the main thread. */
     private val initThread = HandlerThread("bobcar-init").apply { start() }
@@ -56,7 +62,7 @@ object VehicleRuntime {
         recordListener = listener
         monitor.addEventListener(listener)
         // Trip rows (logbook): registered before monitor.start so the first AppResumed is seen
-        val trips = TripRecorder(db, signals).also { tripRecorder = it }
+        val trips = TripRecorder(db, signals, checkin, DriverDefaults(db), rec::record).also { tripRecorder = it }
         monitor.addEventListener(trips.onDrivingEvent)
         trips.start()
         monitor.start()
@@ -66,7 +72,13 @@ object VehicleRuntime {
         val v = VehicleGateway(app).also { vehicle = it }
         val c = CarPropertyGateway(app).also { carProperty = it }
         val n = NaviGateway(app).also { navi = it }
-        unregisterFakeSignals = FakeSignalInjector.register(app, signals, v, c, monitor)
+        val hooks = FakeHooks(
+            continueTapped = monitor::onContinueTapped,
+            confirmDriver = ::confirmDriver,
+            setReservation = trips::setReservationNow,
+            resetConsent = trips::resetConsent,
+        )
+        unregisterFakeSignals = FakeSignalInjector.register(app, signals, v, c, hooks)
 
         initHandler.post {
             if (v.initialize()) v.startSignals(signals)
@@ -75,6 +87,17 @@ object VehicleRuntime {
             n.initialize()
             Log.i(TAG, "collection started")
         }
+    }
+
+    /** Driver card answered: recorded on the check-in (and running trip), and used for trip merging. */
+    fun confirmDriver(driverId: String) {
+        monitor.onDriverConfirmed(driverId)
+        tripRecorder?.confirmDriver(driverId)
+    }
+
+    /** Consent card answered by [driverId]: [동의] (agreed) or [나중에]. */
+    fun answerConsent(driverId: String, agreed: Boolean) {
+        tripRecorder?.answerConsent(driverId, agreed)
     }
 
     @Synchronized

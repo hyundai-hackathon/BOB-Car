@@ -26,4 +26,7 @@ object SignalConfig {
      * The first gear value takes about 3.3 s on the emulator (SDK connect ~2.3 s + [GEAR_HOLD_MS]).
      */
     const val RESUME_WAIT_MS = 15_000L
+
+    /** Odometer gain since the last recorded trip end above this counts as a drive nobody recorded. */
+    const val UNRECORDED_DRIVE_MIN_KM = 0.5f
 }

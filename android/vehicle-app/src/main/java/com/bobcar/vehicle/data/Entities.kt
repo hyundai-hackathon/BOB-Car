@@ -94,6 +94,26 @@ data class DriverEntity(
     val active: Boolean = true,
 )
 
+/**
+ * A driver's answer to the data collection notice (consent card), kept on this vehicle.
+ * Only [STATUS_AGREED] for the current notice version lets that driver's records go to the server;
+ * [STATUS_DEFERRED] ([나중에]) keeps them on the device and asks again at the next check-in.
+ */
+@Entity(tableName = "driver_consent")
+data class DriverConsentEntity(
+    @PrimaryKey val driverId: String,
+    /** AGREED, DEFERRED */
+    val status: String,
+    val decidedAt: Long,
+    /** Version of the notice text the driver answered (checkin ConsentNotice.VERSION) */
+    val noticeVersion: Int,
+) {
+    companion object {
+        const val STATUS_AGREED = "AGREED"
+        const val STATUS_DEFERRED = "DEFERRED"
+    }
+}
+
 /** Reservation of this vehicle (local mock until the server provides it). */
 @Entity(tableName = "reservation", indices = [Index("startAt"), Index("endAt")])
 data class ReservationEntity(
