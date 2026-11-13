@@ -25,7 +25,9 @@ object UploadScheduler {
     private const val BACKOFF_SECONDS = 30L
 
     val serverUrl: String = BuildConfig.SERVER_URL.trim()
-    val serverConfigured: Boolean get() = serverUrl.isNotEmpty()
+
+    /** A server URL is set and allowed for this build (release: HTTPS only). */
+    val serverConfigured: Boolean = canSendTo(serverUrl, BuildConfig.DEBUG)
 
     @Volatile private var loggedNotConfigured = false
 
@@ -33,7 +35,8 @@ object UploadScheduler {
         if (!serverConfigured) {
             if (!loggedNotConfigured) {
                 loggedNotConfigured = true
-                Log.i(TAG, "server not configured, records stay in the upload queue")
+                if (serverUrl.isEmpty()) Log.i(TAG, "server not configured, records stay in the upload queue")
+                else Log.w(TAG, "server URL is not HTTPS, release build does not send; records stay in the upload queue")
             }
             return
         }
@@ -42,5 +45,19 @@ object UploadScheduler {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, work)
+    }
+}
+
+/**
+ * Whether records may be sent to [url] (CLAUDE.md rule 6-1).
+ * Release: HTTPS only. Debug: HTTP is also accepted here; network_security_config still allows plain HTTP
+ * only to the PC's local server (10.0.2.2). Empty = no server yet.
+ */
+internal fun canSendTo(url: String, debug: Boolean): Boolean {
+    val u = url.trim().lowercase()
+    return when {
+        u.startsWith("https://") -> u.length > "https://".length
+        u.startsWith("http://") -> debug && u.length > "http://".length
+        else -> false
     }
 }
