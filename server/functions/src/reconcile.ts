@@ -253,7 +253,7 @@ async function lastTripEndBefore(vehicleId: string, at: number): Promise<number 
   return (trip?.get("endedAt") as number | undefined) ?? null;
 }
 
-async function driverBefore(vehicleId: string, at: number): Promise<string | null> {
+export async function driverBefore(vehicleId: string, at: number): Promise<string | null> {
   const trip = await lastTripBefore(vehicleId, at);
   return (trip?.get("driverId") as string | undefined) ?? null;
 }
