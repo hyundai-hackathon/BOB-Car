@@ -68,6 +68,9 @@ interface VehicleBaselineDao {
 
     @Upsert
     suspend fun upsert(baseline: VehicleBaselineEntity)
+
+    @Query("SELECT * FROM vehicle_baseline WHERE id = ${VehicleBaselineEntity.SINGLE_ROW_ID}")
+    fun flow(): Flow<VehicleBaselineEntity?>
 }
 
 @Dao
@@ -78,7 +81,12 @@ interface DriverDao {
     @Query("SELECT * FROM driver WHERE active = 1 ORDER BY name")
     suspend fun getActive(): List<DriverEntity>
 
-    @Query("SELECT * FROM driver WHERE active = 1 ORDER BY name")
+    /** Insert drivers that are not there yet; existing rows are left alone. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertMissing(drivers: List<DriverEntity>): List<Long>
+
+    /** For the driver list on screen, in registration (ID) order. */
+    @Query("SELECT * FROM driver WHERE active = 1 ORDER BY id")
     fun activeFlow(): Flow<List<DriverEntity>>
 
     @Query("SELECT * FROM driver WHERE id = :id AND active = 1")

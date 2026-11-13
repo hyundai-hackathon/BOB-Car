@@ -12,18 +12,21 @@ object LocalMockData {
         DriverEntity(id = "drv-001", name = "김민준"),
         DriverEntity(id = "drv-002", name = "이서연"),
         DriverEntity(id = "drv-003", name = "박지호"),
+        DriverEntity(id = "drv-004", name = "최유나"),
+        DriverEntity(id = "drv-005", name = "정현우"),
+        DriverEntity(id = "drv-006", name = "한소희"),
     )
 
     /** Holds today's reservation of this vehicle in the mock. */
     const val RESERVED_DRIVER_ID = "drv-001"
 
     /**
-     * Adds the drivers when the list is empty, and a reservation for today (local time, whole day)
+     * Adds the drivers that are missing, and a reservation for today (local time, whole day)
      * when nothing covers [now]. Runs on every service start, so a new day gets its reservation.
      */
     suspend fun seed(db: BobCarDatabase, now: Long): String {
         val driverDao = db.driverDao()
-        val added = if (driverDao.count() == 0) drivers.also { driverDao.upsertAll(it) }.size else 0
+        val added = driverDao.insertMissing(drivers).count { it != -1L }
         val reservationDao = db.reservationDao()
         val reserved = if (reservationDao.getAt(now) == null) {
             val (start, end) = dayWindow(now)

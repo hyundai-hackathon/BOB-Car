@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.bobcar.vehicle.checkin.Briefing
 import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.service.CollectionService
 import com.bobcar.vehicle.service.VehicleRuntime
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
         val activeTripFlow = db.tripDao().activeFlow()
         val lastTripFlow = db.tripDao().lastEndedFlow()
         val driversFlow = db.driverDao().activeFlow()
+        val baselineFlow = db.vehicleBaselineDao().flow()
 
         setContent {
             val snapshot by signals.snapshot.collectAsState()
@@ -50,12 +52,14 @@ class MainActivity : ComponentActivity() {
             val lastTrip by lastTripFlow.collectAsState(initial = null)
             val checkin by VehicleRuntime.checkin.state.collectAsState()
             val drivers by driversFlow.collectAsState(initial = emptyList())
+            val baseline by baselineFlow.collectAsState(initial = null)
             MaterialTheme(colorScheme = darkColorScheme()) {
                 val currentCheckin = checkin
                 if (showsTripScreen(state)) {
                     TripScreen(state, activeTrip, snapshot.odometerKm)
                 } else if (currentCheckin != null && showsDriverCard(state, currentCheckin, snapshot.gear)) {
-                    DriverCard(currentCheckin, drivers, onConfirm = VehicleRuntime::confirmDriver)
+                    val briefing = Briefing.of(snapshot.socPercent, snapshot.odometerKm, baseline?.lastOdometerKm)
+                    DriverCard(currentCheckin, drivers, briefing, onConfirm = VehicleRuntime::confirmDriver)
                 } else {
                     DiagnosticScreen(
                         snapshot, state, recentEvents, fakeMode, storedEventCount, pendingUploadCount, upload, lastTrip,

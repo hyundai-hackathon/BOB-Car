@@ -35,24 +35,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.bobcar.vehicle.checkin.Briefing
 import com.bobcar.vehicle.checkin.CheckinState
 import com.bobcar.vehicle.checkin.DefaultDriver
 import com.bobcar.vehicle.checkin.DefaultSource
+import com.bobcar.vehicle.checkin.Unrecorded
 import com.bobcar.vehicle.data.DriverEntity
 import com.bobcar.vehicle.driving.DrivingState
 import com.bobcar.vehicle.signal.Gear
+import java.util.Locale
 
 /**
- * Driver card shown when the driver sits down (Figma V3 기본값 / V4 목록 / V5 확인완료).
+ * Driver card shown when the driver sits down (Figma V3 기본값 / V4 목록 / V5 확인완료),
+ * with the [briefing] row at the bottom of V3 / V5.
  * One tap confirms the suggested driver, [다른 사람] opens the driver list. Only shown in P
  * (CLAUDE.md rule 3, see [showsDriverCard]); closes when the brake is pressed in P or the car leaves P
  * (unconfirmed → recorded as provisional).
  */
 @Composable
-fun DriverCard(checkin: CheckinState, drivers: List<DriverEntity>, onConfirm: (String) -> Unit) {
+fun DriverCard(checkin: CheckinState, drivers: List<DriverEntity>, briefing: Briefing, onConfirm: (String) -> Unit) {
     val nameOf = { id: String? -> drivers.firstOrNull { it.id == id }?.name }
     val suggested = checkin.default?.let { d -> nameOf(d.driverId)?.let { d to it } }
     val confirmedName = nameOf(checkin.confirmedDriverId)
@@ -72,13 +77,40 @@ fun DriverCard(checkin: CheckinState, drivers: List<DriverEntity>, onConfirm: (S
                 onBack = if (suggested != null || confirmedName != null) ({ choosing = false }) else null,
             )
 
-            confirmedName != null -> Confirmed(confirmedName, onOther = { choosing = true })
+            confirmedName != null -> {
+                Confirmed(confirmedName, onOther = { choosing = true })
+                BriefingRow(briefing, Modifier.align(Alignment.BottomStart))
+            }
 
             else -> {
                 val (default, name) = suggested!!
                 Suggested(default, name, onConfirm = { onConfirm(default.driverId) }, onOther = { choosing = true })
+                BriefingRow(briefing, Modifier.align(Alignment.BottomStart))
             }
         }
+    }
+}
+
+/** Bottom row of V3 / V5: 배터리 · 누적 거리 · 미기록 운행. */
+@Composable
+private fun BriefingRow(briefing: Briefing, modifier: Modifier) {
+    Row(modifier = modifier.padding(start = BobDimens.PageMargin, bottom = 80.dp)) {
+        Stat("배터리", briefing.socPercent?.let { "$it %" } ?: "—")
+        Stat("누적 거리", briefing.odometerKm?.let { String.format(Locale.KOREA, "%,d km", it.toLong()) } ?: "—")
+        when (briefing.unrecorded) {
+            is Unrecorded.Found -> Stat("미기록 운행", "1건", BobColors.AccentSoft)
+            Unrecorded.None -> Stat("미기록 운행", "없음")
+            Unrecorded.Unknown -> Stat("미기록 운행", "확인 불가", BobColors.TextSecondary)
+        }
+    }
+}
+
+@Composable
+private fun Stat(label: String, value: String, valueColor: Color = BobColors.TextPrimary) {
+    Column(modifier = Modifier.width(510.dp)) {
+        Text(label, style = BobType.Label)
+        Spacer(Modifier.height(30.dp))
+        Text(value, style = BobType.Stat, color = valueColor)
     }
 }
 
@@ -231,11 +263,13 @@ private val previewDrivers = listOf(
     DriverEntity("drv-003", "박지호"),
 )
 
+private val previewBriefing = Briefing.of(socPercent = 78, odometerKm = 12_482f, lastRecordedOdometerKm = 12_476f)
+
 @Preview(widthDp = 1680, heightDp = 1210)
 @Composable
 private fun DriverCardPreview() {
     BobTheme {
-        DriverCard(CheckinState(0, DefaultDriver("drv-001", DefaultSource.RESERVATION)), previewDrivers, onConfirm = {})
+        DriverCard(CheckinState(0, DefaultDriver("drv-001", DefaultSource.RESERVATION)), previewDrivers, previewBriefing, onConfirm = {})
     }
 }
 
@@ -246,6 +280,7 @@ private fun DriverCardConfirmedPreview() {
         DriverCard(
             CheckinState(0, DefaultDriver("drv-001", DefaultSource.RESERVATION), confirmedDriverId = "drv-001"),
             previewDrivers,
+            previewBriefing,
             onConfirm = {},
         )
     }
@@ -255,6 +290,6 @@ private fun DriverCardConfirmedPreview() {
 @Composable
 private fun DriverCardListPreview() {
     BobTheme {
-        DriverCard(CheckinState(0, null), previewDrivers, onConfirm = {})
+        DriverCard(CheckinState(0, null), previewDrivers, previewBriefing, onConfirm = {})
     }
 }
