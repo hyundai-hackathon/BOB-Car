@@ -178,34 +178,51 @@ async function chargesOf(vehicleId: string, eventType: string): Promise<Charge[]
 const windowStart = (c: Charge) => c.since - RECONCILE.windowMarginMs;
 const windowEnd = (c: Charge) => c.foundAt + RECONCILE.windowMarginMs;
 
-/** What deciding a payment's charge needs: the vehicle's charges and its trip end times. */
+/**
+ * What deciding a payment's charge needs: the vehicle's charges, and when it set off and arrived. Departures
+ * come from the TripStarted events (a trip continued within 10 minutes keeps its first start time, so the
+ * trip rows alone miss the later departures); arrivals from TripEnded events and trip rows.
+ */
 interface Context {
   charges: Charge[];
-  tripEnds: number[];
+  departures: number[];
+  arrivals: number[];
 }
 
 async function contextOf(vehicleId: string, eventType: string): Promise<Context> {
-  const [charges, trips] = await Promise.all([
+  const events = (type: string) => db().collection(COL.events).where("vehicleId", "==", vehicleId).where("type", "==", type).get();
+  const [charges, trips, started, ended] = await Promise.all([
     chargesOf(vehicleId, eventType),
     db().collection(COL.trips).where("vehicleId", "==", vehicleId).orderBy("startedAt", "desc").limit(50).get(),
+    events("TripStarted"),
+    events("TripEnded"),
   ]);
-  const tripEnds = trips.docs.map((d) => d.get("endedAt")).filter((t): t is number => typeof t === "number");
-  return { charges, tripEnds };
+  const times = (docs: DocumentSnapshot[], field: string) =>
+    docs.map((d) => d.get(field)).filter((t): t is number => typeof t === "number");
+  return {
+    charges,
+    departures: times(started.docs, "occurredAt"),
+    arrivals: [...times(ended.docs, "occurredAt"), ...times(trips.docs, "endedAt")],
+  };
 }
 
 /**
  * The one charge a payment at [paidAt] belongs to. Windows of charges close together overlap by their
  * margins, so a payment goes to the charge whose own span (snapshot to discovery) contains it, else the
- * nearest one; a tie goes to the later charge. A payment after a charge was found does not belong to it
- * when the car finished another trip in between (it was parked again somewhere else).
+ * nearest one; a tie goes to the later charge. A charge is left out when the car moved between it and the
+ * payment: set off or arrived again after the charge was found and before the payment, or set off after
+ * the payment and before the charge's parking began (the payment belongs to an earlier stop).
  * null when no charge fits.
  */
 function ownerOf(paidAt: number, context: Context): Charge | null {
   const distance = (c: Charge) => (paidAt < c.since ? c.since - paidAt : paidAt > c.foundAt ? paidAt - c.foundAt : 0);
-  const droveAgain = (c: Charge) => paidAt > c.foundAt && context.tripEnds.some((t) => t > c.foundAt && t <= paidAt);
+  const between = (times: number[], from: number, to: number) => times.some((t) => t > from && t <= to);
+  const movedSince = (c: Charge) =>
+    paidAt > c.foundAt && (between(context.departures, c.foundAt, paidAt) || between(context.arrivals, c.foundAt, paidAt));
+  const movedBefore = (c: Charge) => paidAt < c.since && between(context.departures, paidAt - 1, c.since);
   return (
     context.charges
-      .filter((c) => paidAt >= windowStart(c) && paidAt <= windowEnd(c) && !droveAgain(c))
+      .filter((c) => paidAt >= windowStart(c) && paidAt <= windowEnd(c) && !movedSince(c) && !movedBefore(c))
       .sort((a, b) => distance(a) - distance(b) || b.foundAt - a.foundAt)[0] ?? null
   );
 }

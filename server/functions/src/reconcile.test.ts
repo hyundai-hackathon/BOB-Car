@@ -169,6 +169,24 @@ describe("matching rules", () => {
     expect(await flag(second.transactionId)).toMatchObject({ status: "RESOLVED", windowPaidTotal: 12_000 });
   });
 
+  it("a payment made before the car set off stays with the earlier charge", async () => {
+    // First stop: trip end at A, charge found at A + 5 min, paid at A + 7 min (after boarding)
+    await chargeFound({ sinceAt: A, foundAt: A + 5 * MIN });
+    const early = await pay(12_000, A + 7 * MIN);
+    expect(early.flag).toBeNull();
+    // Then the car sets off at A + 8 min (a trip continued within 10 minutes: only the event shows it),
+    // stops at A + 9 min, a payment at A + 10 min, and the charge is found at A + 11 min
+    await db().collection(COL.events).doc(`${VEHICLE}_start2`).set({ vehicleId: VEHICLE, type: "TripStarted", occurredAt: A + 8 * MIN });
+    await db().collection(COL.events).doc(`${VEHICLE}_end2`).set({ vehicleId: VEHICLE, type: "TripEnded", occurredAt: A + 9 * MIN });
+    const late = await pay(12_000, A + 10 * MIN);
+    expect(late.flag).toMatchObject({ status: "OPEN", reason: "NO_CHARGE" });
+    await chargeFound({ sinceAt: A + 9 * MIN, foundAt: A + 11 * MIN });
+
+    // Each payment with its own charge: not added up
+    expect(await flag(early.transactionId)).toBeUndefined();
+    expect(await flag(late.transactionId)).toMatchObject({ status: "RESOLVED", windowPaidTotal: 12_000 });
+  });
+
   it("a refuel payment with no refuel record is flagged (the emulator car is electric)", async () => {
     expect((await pay(62_000, A + 30 * MIN, "FUEL")).flag).toMatchObject({ kind: "FUEL_PAYMENT", status: "OPEN", note: "주유 기록 없음" });
   });
