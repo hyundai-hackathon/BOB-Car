@@ -31,3 +31,25 @@ export const MAX_ITEMS_PER_UPLOAD = 200;
 export function isEmulator(): boolean {
   return process.env.FUNCTIONS_EMULATOR === "true";
 }
+
+/**
+ * Card payment vs. charge check (design-review F10, demo scene 5). A payment is matched with a charge found by
+ * the vehicle when it falls between the snapshot before the charge minus [windowMarginMs] and the moment the
+ * charge was found plus [windowMarginMs]. Expected amount = energy x unit price; ratio = expected / paid.
+ */
+export const RECONCILE = {
+  /** KRW per kWh used to price a charge (demo: +45%p of 77.4 kWh = 34.8 kWh = about 12,191 KRW). */
+  chargePricePerKwh: 350,
+  /** KRW per litre used to price a refuel (real ICE cars; the emulator is an EV). */
+  fuelPricePerLiter: 1_700,
+  /** At or above this ratio the payment is explained by the charge. */
+  minRatio: 0.7,
+  /** Payments below this amount are not checked. */
+  minAmount: 10_000,
+  /** Margin before the snapshot and after the charge was found. */
+  windowMarginMs: 10 * 60_000,
+  /** When the event has no snapshot time and no trip end is known: look back this far. */
+  fallbackLookbackMs: 24 * 60 * 60_000,
+  /** Open flags are checked again once a day (late events, cancellations). */
+  sweepSchedule: "every day 04:00",
+} as const;

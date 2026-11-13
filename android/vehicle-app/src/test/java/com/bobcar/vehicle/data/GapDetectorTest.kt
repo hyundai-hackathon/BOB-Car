@@ -56,6 +56,8 @@ class GapDetectorTest {
         assertEquals(GapDetector.EVENT_CHARGE, event.type)
         assertEquals(5_000L, event.at)
         assertTrue(event.detail!!, event.detail!!.startsWith("gainedPercent=45 from=23 to=68 kwh=34.83 "))
+        // The server matches card payments from the trip end (sinceAt) to the boarding (event time)
+        assertTrue(event.detail!!, event.detail!!.endsWith("since=TRIP_END sinceAt=2000"))
     }
 
     @Test
@@ -78,6 +80,7 @@ class GapDetectorTest {
         val event = events.single()
         assertEquals(GapDetector.EVENT_UNRECORDED_DRIVE, event.type)
         assertTrue(event.detail!!, event.detail!!.startsWith("km=6.00 from=12362.0 to=12368.0 "))
+        assertTrue(event.detail!!, event.detail!!.endsWith("sinceAt=2000"))
     }
 
     @Test

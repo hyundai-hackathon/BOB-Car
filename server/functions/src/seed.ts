@@ -7,6 +7,9 @@ import { COL, db } from "./db";
  */
 export const SEED_VEHICLE_ID = "veh-001";
 
+/** The emulator car's battery (INFO_EV_BATTERY_CAPACITY 77.4 kWh), used when a charge comes without kWh. */
+export const SEED_BATTERY_CAPACITY_WH = 77_400;
+
 export const SEED_DRIVERS: ReadonlyArray<{ id: string; name: string }> = [
   { id: "drv-001", name: "김민준" },
   { id: "drv-002", name: "이서연" },
@@ -37,7 +40,7 @@ export async function seed(now: number): Promise<void> {
   const batch = firestore.batch();
   batch.set(
     firestore.collection(COL.vehicles).doc(SEED_VEHICLE_ID),
-    { vehicleId: SEED_VEHICLE_ID, name: "업무차 1호" },
+    { vehicleId: SEED_VEHICLE_ID, name: "업무차 1호", energy: "EV", batteryCapacityWh: SEED_BATTERY_CAPACITY_WH },
     { merge: true },
   );
   for (const driver of SEED_DRIVERS) {

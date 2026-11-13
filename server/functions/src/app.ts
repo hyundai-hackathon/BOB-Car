@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import * as logger from "firebase-functions/logger";
 import { requireIdToken } from "./auth";
 import { COL, db } from "./db";
+import { cancelPayment, checkPayment, recheckOpenFlags } from "./reconcile";
 import { ensureSeeded } from "./seed";
 import { closeStaleTrips } from "./trips";
 import { isObject, processUpload, UploadError } from "./uploads";
@@ -117,10 +118,26 @@ export function createApp(options: AppOptions): express.Express {
       paidAt: body.paidAt,
       createdAt: Date.now(),
     });
-    res.status(201).json({ transactionId: ref.id });
+    // Expense check ①: flagged unless a charge the vehicle found explains it
+    res.status(201).json({ transactionId: ref.id, flag: await checkPayment(ref.id) });
+  });
+
+  /** Mock card cancellation (whole amount): the payment no longer counts, its flag is resolved. */
+  v1.post("/transactions/:transactionId/cancel", async (req, res) => {
+    const flag = await cancelPayment(String(req.params.transactionId), Date.now());
+    if (flag === undefined) {
+      res.status(404).json({ error: "transaction not found" });
+      return;
+    }
+    res.json({ transactionId: req.params.transactionId, canceled: true, flag });
   });
 
   if (options.dev) {
+    /** Runs the daily check of open flags now (the emulator does not run scheduled functions). */
+    v1.post("/dev/reconcile", async (_req, res) => {
+      res.json(await recheckOpenFlags());
+    });
+
     /**
      * Runs the scheduled auto-close now (the emulator does not run scheduled functions by itself).
      * {"now": epoch ms} pretends the check runs at that time.
