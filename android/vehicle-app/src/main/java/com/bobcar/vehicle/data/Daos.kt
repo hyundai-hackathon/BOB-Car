@@ -137,6 +137,10 @@ interface ReservationDao {
     @Query("SELECT * FROM reservation WHERE startAt <= :at AND :at < endAt ORDER BY startAt DESC LIMIT 1")
     suspend fun getAt(at: Long): ReservationEntity?
 
+    /** Removes the reservations overlapping [start, end) (replaced by the server's). */
+    @Query("DELETE FROM reservation WHERE startAt < :end AND endAt > :start")
+    suspend fun deleteOverlapping(start: Long, end: Long): Int
+
     /** Removes the reservations covering [at] (debug: test the no-reservation case). */
     @Query("DELETE FROM reservation WHERE startAt <= :at AND :at < endAt")
     suspend fun deleteAt(at: Long): Int
