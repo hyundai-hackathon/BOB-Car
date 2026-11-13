@@ -3,7 +3,7 @@ package com.bobcar.vehicle.data
 import java.util.Calendar
 
 /**
- * Driver list and reservations used until the server provides them (roadmap: server stage).
+ * Driver list, customer places and reservations used until the server provides them (roadmap: server stage).
  * Names are made up. IDs are app-made (CLAUDE.md rule 6).
  */
 object LocalMockData {
@@ -21,12 +21,23 @@ object LocalMockData {
     const val RESERVED_DRIVER_ID = "drv-001"
 
     /**
-     * Adds the drivers that are missing, and a reservation for today (local time, whole day)
+     * Customer places (BUSINESS suggestion). Coordinates are approximate; a destination also matches by
+     * name (spaces ignored), e.g. the demo route "판교 테크노밸리".
+     */
+    val customers = listOf(
+        CustomerEntity(id = "cus-001", name = "판교 테크노밸리", latitude = 37.4013, longitude = 127.1086),
+        CustomerEntity(id = "cus-002", name = "코엑스", latitude = 37.5116, longitude = 127.0594),
+        CustomerEntity(id = "cus-003", name = "킨텍스 제1전시장", latitude = 37.6683, longitude = 126.7454),
+    )
+
+    /**
+     * Adds the drivers and customers that are missing, and a reservation for today (local time, whole day)
      * when nothing covers [now]. Runs on every service start, so a new day gets its reservation.
      */
     suspend fun seed(db: BobCarDatabase, now: Long): String {
         val driverDao = db.driverDao()
         val added = driverDao.insertMissing(drivers).count { it != -1L }
+        val customersAdded = db.customerDao().insertMissing(customers).count { it != -1L }
         val reservationDao = db.reservationDao()
         val reserved = if (reservationDao.getAt(now) == null) {
             val (start, end) = dayWindow(now)
@@ -35,7 +46,7 @@ object LocalMockData {
         } else {
             false
         }
-        return "drivers added=$added, today's reservation added=$reserved"
+        return "drivers added=$added, customers added=$customersAdded, today's reservation added=$reserved"
     }
 
     /** Replaces the reservation covering [now] with one for [driverId] today, or removes it when null. */

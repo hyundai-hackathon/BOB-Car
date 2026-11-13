@@ -15,8 +15,9 @@ import androidx.room.RoomDatabase
         ReservationEntity::class,
         UploadQueueEntity::class,
         DriverConsentEntity::class,
+        CustomerEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class BobCarDatabase : RoomDatabase() {
@@ -28,6 +29,7 @@ abstract class BobCarDatabase : RoomDatabase() {
     abstract fun reservationDao(): ReservationDao
     abstract fun uploadQueueDao(): UploadQueueDao
     abstract fun driverConsentDao(): DriverConsentDao
+    abstract fun customerDao(): CustomerDao
 
     companion object {
         private const val NAME = "bobcar.db"
