@@ -55,8 +55,9 @@ class ServerApi(
 
     private fun get(path: String): JSONObject? {
         if (!config.configured) return null
-        var response = request(path, forceRefresh = false) ?: return null
-        if (response.code == 401) response = request(path, forceRefresh = true) ?: return null
+        var response = request(path) { tokens.get() } ?: return null
+        if (response.code == 401) response = request(path) { tokens.get(forceRefresh = true) } ?: return null
+        if (response.code == 401) response = request(path) { tokens.signUpAgain() } ?: return null
         if (response.code !in 200..299) return null
         return try {
             JSONObject(response.body)
@@ -65,10 +66,10 @@ class ServerApi(
         }
     }
 
-    private fun request(path: String, forceRefresh: Boolean): HttpResponse? {
-        val token = (tokens.get(forceRefresh) as? IdTokenProvider.Result.Token)?.idToken ?: return null
+    private fun request(path: String, token: () -> IdTokenProvider.Result): HttpResponse? {
+        val idToken = (token() as? IdTokenProvider.Result.Token)?.idToken ?: return null
         return try {
-            http.send("GET", config.api(path), mapOf("Authorization" to "Bearer $token"), null)
+            http.send("GET", config.api(path), mapOf("Authorization" to "Bearer $idToken"), null)
         } catch (e: IOException) {
             null
         }

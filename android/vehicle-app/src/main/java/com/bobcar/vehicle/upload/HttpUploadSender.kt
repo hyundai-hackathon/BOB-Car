@@ -18,7 +18,8 @@ import java.io.IOException
  * Answer 200: {"stored":[..],"duplicates":[..],"skipped":[{"queueId":3,"reason":"no-consent"}]}
  * (server/functions/src/uploads.ts). A resent item is a duplicate on the server, never stored twice.
  *
- * A 401 gets one more try with a fresh token. Sign-in trouble is a Retry: items keep their attempts.
+ * A 401 gets one more try with a refreshed token, then one with a new anonymous account (the server no longer
+ * knows the old one, e.g. emulator data wiped). Sign-in trouble is a Retry: items keep their attempts.
  */
 class HttpUploadSender(
     private val config: ServerConfig,
@@ -28,8 +29,9 @@ class HttpUploadSender(
 
     override fun send(items: List<UploadQueueEntity>): SendResult {
         val body = body(items)
-        var answer = post(body, forceRefresh = false)
-        if (answer is Answer.Unauthorized) answer = post(body, forceRefresh = true)
+        var answer = post(body) { tokens.get() }
+        if (answer is Answer.Unauthorized) answer = post(body) { tokens.get(forceRefresh = true) }
+        if (answer is Answer.Unauthorized) answer = post(body) { tokens.signUpAgain() }
         return when (answer) {
             is Answer.Done -> answer.result
             Answer.Unauthorized -> SendResult.Retry("HTTP 401")
@@ -41,8 +43,8 @@ class HttpUploadSender(
         data object Unauthorized : Answer
     }
 
-    private fun post(body: ByteArray, forceRefresh: Boolean): Answer {
-        val token = when (val t = tokens.get(forceRefresh)) {
+    private fun post(body: ByteArray, token: () -> IdTokenProvider.Result): Answer {
+        val idToken = when (val t = token()) {
             is IdTokenProvider.Result.Token -> t.idToken
             is IdTokenProvider.Result.Unavailable -> return Answer.Done(SendResult.Retry(t.reason))
         }
@@ -52,7 +54,7 @@ class HttpUploadSender(
                 config.api(PATH),
                 mapOf(
                     "Content-Type" to "application/json; charset=utf-8",
-                    "Authorization" to "Bearer $token",
+                    "Authorization" to "Bearer $idToken",
                 ),
                 body,
             )
@@ -63,7 +65,8 @@ class HttpUploadSender(
         return when {
             code == 401 -> Answer.Unauthorized
             code in 200..299 -> Answer.Done(SendResult.Success(skipped(response.body)))
-            code == 408 || code == 429 || code >= 500 -> Answer.Done(SendResult.Retry("HTTP $code"))
+            // 404: the API is not there yet (server still starting, or not deployed): nothing wrong with the items
+            code == 404 || code == 408 || code == 429 || code >= 500 -> Answer.Done(SendResult.Retry("HTTP $code"))
             else -> Answer.Done(SendResult.Rejected("HTTP $code"))
         }
     }

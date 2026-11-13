@@ -95,6 +95,18 @@ class IdTokenProviderTest {
     }
 
     @Test
+    fun signUpAgainForgetsTheStoredAccount() {
+        val http = FakeHttp(signUpOk("id-1", "rt-1"), signUpOk("id-9", "rt-9"))
+        val store = MemoryStore()
+        val provider = IdTokenProvider(emulator, store, http) { clock }
+        provider.get()
+
+        assertEquals(IdTokenProvider.Result.Token("id-9"), provider.signUpAgain())
+        assertEquals("rt-9", store.token)
+        assertTrue(http.calls[1].url.endsWith("accounts:signUp"))
+    }
+
+    @Test
     fun unknownRefreshTokenLeadsToANewSignUp() {
         val http = FakeHttp(
             { HttpResponse(400, """{"error":{"message":"INVALID_REFRESH_TOKEN"}}""") },

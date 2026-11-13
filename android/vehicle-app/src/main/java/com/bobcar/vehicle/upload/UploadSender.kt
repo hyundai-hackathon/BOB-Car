@@ -14,7 +14,7 @@ sealed interface SendResult {
      */
     data class Success(val skipped: Map<Long, String> = emptyMap()) : SendResult
 
-    /** Network down, timeout, 5xx, 408, 429, sign-in trouble: try the same batch again later. */
+    /** Network down, timeout, 5xx, 404 (API not there yet), 408, 429, sign-in trouble: try the same batch again later. */
     data class Retry(val reason: String) : SendResult
 
     /** The server refused the batch (other 4xx): count an attempt on each item. */

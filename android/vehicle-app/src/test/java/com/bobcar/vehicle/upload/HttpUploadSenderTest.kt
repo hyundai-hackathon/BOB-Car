@@ -91,8 +91,17 @@ class HttpUploadSenderTest {
     }
 
     @Test
-    fun a401TwiceIsRetryLaterNotARejection() {
-        val server = FakeServer({ HttpResponse(401, "") }, { HttpResponse(401, "") })
+    fun aSecond401LeadsToANewAnonymousAccount() {
+        // The server no longer knows the stored account (e.g. emulator data wiped), though refreshing still works
+        val server = FakeServer({ HttpResponse(401, "") }, { HttpResponse(401, "") }, { HttpResponse(200, """{"skipped":[]}""") })
+
+        assertEquals(SendResult.Success(), sender(server).send(items))
+        assertEquals(listOf("Bearer id-1", "Bearer id-2", "Bearer id-3"), server.uploads.map { it.headers["Authorization"] })
+    }
+
+    @Test
+    fun a401EvenWithANewAccountIsRetryLaterNotARejection() {
+        val server = FakeServer({ HttpResponse(401, "") }, { HttpResponse(401, "") }, { HttpResponse(401, "") })
 
         assertEquals(SendResult.Retry("HTTP 401"), sender(server).send(items))
     }
@@ -100,6 +109,8 @@ class HttpUploadSenderTest {
     @Test
     fun serverAndNetworkTroubleIsRetryAndOtherRefusalsAreRejections() {
         assertEquals(SendResult.Retry("HTTP 503"), sender(FakeServer({ HttpResponse(503, "") })).send(items))
+        // The API is not there yet (server still starting): the items must not use up their attempts
+        assertEquals(SendResult.Retry("HTTP 404"), sender(FakeServer({ HttpResponse(404, "Function us-central1-api does not exist") })).send(items))
         assertEquals(SendResult.Retry("ConnectException"), sender(FakeServer({ throw java.net.ConnectException() })).send(items))
         assertEquals(SendResult.Rejected("HTTP 403"), sender(FakeServer({ HttpResponse(403, """{"error":"vehicle is not registered"}""") })).send(items))
     }

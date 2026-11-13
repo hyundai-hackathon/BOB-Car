@@ -51,6 +51,22 @@ class IdTokenProvider(
         }
     }
 
+    /**
+     * The server refused even a freshly refreshed token: the account behind the stored refresh token is gone
+     * on the server side (e.g. emulator data wiped while the Auth refresh still works). Forget it and sign up again.
+     */
+    @Synchronized
+    fun signUpAgain(): Result {
+        store.clear()
+        idToken = null
+        expiresAt = 0
+        return try {
+            signUp()
+        } catch (e: IOException) {
+            Result.Unavailable("auth unreachable: ${e.javaClass.simpleName}", retryable = true)
+        }
+    }
+
     /** null when the refresh token is no longer accepted (then a new sign-up follows). */
     private fun refresh(refreshToken: String): Result? {
         val form = "grant_type=refresh_token&refresh_token=" + URLEncoder.encode(refreshToken, "UTF-8")
