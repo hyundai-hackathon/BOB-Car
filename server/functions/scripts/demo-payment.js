@@ -4,7 +4,7 @@
 //   npm run demo:payment -- 12000            charge payment of 12,000 KRW now (veh-001)
 //   npm run demo:payment -- 62000 FUEL       refuel payment
 //   npm run demo:payment -- cancel <id>      cancel a payment
-//   npm run demo:payment -- flags            list the flags of veh-001
+//   npm run demo:payment -- flags            list the flags of veh-001 (payments, use outside the reservation, unrecorded drives)
 //
 // Emulators only (http://127.0.0.1). Override with BOBCAR_API / BOBCAR_AUTH / BOBCAR_VEHICLE.
 const API = process.env.BOBCAR_API ?? "http://127.0.0.1:5001/demo-bobcar/asia-northeast3/api/v1";
@@ -35,7 +35,15 @@ async function call(method, path, body) {
 
 function describeFlag(flag) {
   if (!flag) return "플래그 없음 (판정 제외이거나 충전 기록과 맞음)";
-  return `[${flag.status}] ${flag.note} — 결제 ${flag.paidAmount?.toLocaleString("ko-KR")}원, 운전자 ${flag.driverId ?? "미상"} (${flag.flagId})`;
+  const head = `[${flag.status}] ${flag.note}`;
+  switch (flag.kind) {
+    case "OUT_OF_RESERVATION":
+      return `${head} — 운전자 ${flag.driverId}, 예약자 ${flag.reservedDriverId ?? "없음"}, 운행 ${flag.tripCount}건 (${flag.flagId})`;
+    case "UNRECORDED_DRIVE":
+      return `${head} — 마지막 운전자 ${flag.lastDriverId ?? "미상"}, 발견 ${flag.foundByDriverId ?? "미상"} (${flag.flagId})`;
+    default:
+      return `${head} — 결제 ${flag.paidAmount?.toLocaleString("ko-KR")}원, 운전자 ${flag.driverId ?? "미상"} (${flag.flagId})`;
+  }
 }
 
 async function main() {
