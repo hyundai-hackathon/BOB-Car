@@ -12,6 +12,7 @@ import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.signal.RouteStart
 import com.bobcar.vehicle.signal.SignalEvent
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.trip.Purpose
 import com.bobcar.vehicle.util.maskForLog
 
 /**
@@ -31,6 +32,7 @@ import com.bobcar.vehicle.util.maskForLog
  *   driver   <id>             driver card answered with this driver (e.g. drv-002)
  *   reservation <id> | none   mock reservation covering now: this driver for today, or none
  *   consent-reset <id>        forget this driver's consent answer (the consent card shows again)
+ *   purpose  BUSINESS | COMMUTE | PERSONAL   purpose tapped on the trip-end card
  */
 object FakeSignalInjector {
 
@@ -70,6 +72,7 @@ object FakeSignalInjector {
                         else -> true.also { hooks.setReservation(value) }
                     }
                     "consent-reset" -> value?.takeIf { it.isNotBlank() }?.let { hooks.resetConsent(it) } != null
+                    "purpose" -> Purpose.entries.firstOrNull { it.name == value?.uppercase() }?.let { hooks.choosePurpose(it) } != null
                     else -> false
                 }
                 if (!ok) Log.w(TAG, "unknown signal/value: $signal=$value")

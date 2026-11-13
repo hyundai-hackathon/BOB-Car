@@ -17,6 +17,8 @@ import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.NaviGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.signal.VehicleSignals
+import com.bobcar.vehicle.trip.Purpose
+import com.bobcar.vehicle.trip.TripEndChoices
 import com.bobcar.vehicle.upload.UploadScheduler
 
 /**
@@ -35,6 +37,9 @@ object VehicleRuntime {
 
     /** The driver now checked in (for the driver card). */
     val checkin = DriverCheckin()
+
+    /** Driver and purpose on the trip-end card. */
+    val tripEnd = TripEndChoices()
 
     /** SDK registration blocks for ~1 s while the services bind, so it runs off the main thread. */
     private val initThread = HandlerThread("bobcar-init").apply { start() }
@@ -65,7 +70,7 @@ object VehicleRuntime {
         monitor.addEventListener(listener)
         // Trip rows (logbook): registered before monitor.start so the first AppResumed is seen
         val trips = TripRecorder(
-            db, signals, checkin, DriverDefaults(db),
+            db, signals, checkin, DriverDefaults(db), tripEnd,
             recordEvent = rec::record,
             recordConsent = rec::recordConsent,
             assignDriver = rec::assignDriver,
@@ -88,6 +93,7 @@ object VehicleRuntime {
             confirmDriver = ::confirmDriver,
             setReservation = trips::setReservationNow,
             resetConsent = trips::resetConsent,
+            choosePurpose = ::choosePurpose,
         )
         unregisterFakeSignals = FakeSignalInjector.register(app, signals, v, c, hooks)
 
@@ -104,6 +110,11 @@ object VehicleRuntime {
     fun confirmDriver(driverId: String) {
         monitor.onDriverConfirmed(driverId)
         tripRecorder?.confirmDriver(driverId)
+    }
+
+    /** A purpose tapped on the trip-end card. */
+    fun choosePurpose(purpose: Purpose) {
+        tripRecorder?.choosePurpose(purpose)
     }
 
     /** Consent card answered by [driverId]: [동의] (agreed) or [나중에]. */

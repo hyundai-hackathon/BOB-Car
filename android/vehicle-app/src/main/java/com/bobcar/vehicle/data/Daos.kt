@@ -25,6 +25,10 @@ interface TripDao {
     @Query("SELECT * FROM trip WHERE status = 'ENDED' ORDER BY endedAt DESC LIMIT 1")
     suspend fun getLastEnded(): TripEntity?
 
+    /** The latest ended trip that has a purpose: the previous purpose for the suggestion. */
+    @Query("SELECT * FROM trip WHERE status = 'ENDED' AND purpose IS NOT NULL ORDER BY endedAt DESC LIMIT 1")
+    suspend fun getLastEndedWithPurpose(): TripEntity?
+
     @Query("SELECT COUNT(*) FROM trip")
     fun countFlow(): Flow<Int>
 

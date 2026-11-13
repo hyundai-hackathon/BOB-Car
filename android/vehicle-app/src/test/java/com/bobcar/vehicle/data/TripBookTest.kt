@@ -4,8 +4,11 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import com.bobcar.vehicle.trip.Purpose
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,6 +34,93 @@ class TripBookTest {
     }
 
     private fun reading(km: Float?, soc: Int? = 60) = TripBook.Reading(km, soc)
+
+    private fun outcome(purpose: Purpose, answered: Boolean = true, driverId: String? = "drv-001") =
+        TripBook.EndOutcome(driverId, driverProvisional = !answered, purpose = purpose, purposeProvisional = !answered)
+
+    @Test
+    fun endedTripIsSavedWithTheCardAnswer() = runTest {
+        book.onRouteStarted(TripBook.Route("판교 테크노밸리", 2_400))
+        book.onTripStarted(1_000, merged = false, reading(100f), TripBook.DriverChoice("drv-002", provisional = true))
+
+        val ended = book.onTripEnded(2_000, "COUNTDOWN", reading(118f), outcome(Purpose.BUSINESS))!!
+
+        assertEquals("BUSINESS", ended.purpose)
+        assertFalse(ended.purposeProvisional)
+        assertEquals("drv-001", ended.driverId)
+        assertFalse(ended.driverProvisional)
+        assertEquals("판교 테크노밸리", ended.destinationName)
+        assertEquals(2_400, ended.expectedTollFare)
+    }
+
+    @Test
+    fun personalTripLosesItsDestination() = runTest {
+        book.onRouteStarted(TripBook.Route("동네 마트", 0))
+        book.onTripStarted(1_000, merged = false, reading(100f))
+
+        val ended = book.onTripEnded(2_000, "SEAT_EMPTY", reading(103f), outcome(Purpose.PERSONAL))!!
+
+        assertEquals("PERSONAL", ended.purpose)
+        assertNull(ended.destinationName)
+        assertNull(db.tripDao().getById(ended.id)!!.destinationName)
+        assertEquals(3f, ended.distanceKm())
+    }
+
+    @Test
+    fun unansweredCardSavesTheSuggestionAsProvisional() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(100f), TripBook.DriverChoice("drv-001", provisional = true))
+
+        val ended = book.onTripEnded(2_000, "COUNTDOWN", reading(110f), outcome(Purpose.COMMUTE, answered = false))!!
+
+        assertEquals("COMMUTE", ended.purpose)
+        assertTrue(ended.purposeProvisional)
+        assertTrue(ended.driverProvisional)
+    }
+
+    @Test
+    fun outcomeWithoutDriverKeepsTheTripsDriver() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(100f), TripBook.DriverChoice("drv-003", provisional = false))
+
+        val ended = book.onTripEnded(2_000, "COUNTDOWN", reading(110f), outcome(Purpose.BUSINESS, answered = false, driverId = null))!!
+
+        assertEquals("drv-003", ended.driverId)
+        assertFalse(ended.driverProvisional)
+    }
+
+    @Test
+    fun previousPurposeComesFromTheLatestEndedTripWithOne() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(110f), outcome(Purpose.COMMUTE))
+        book.onTripStarted(3_000, merged = false, reading(110f))
+        book.onTripEnded(4_000, "COUNTDOWN", reading(120f))
+
+        assertEquals("COMMUTE", db.tripDao().getLastEndedWithPurpose()!!.purpose)
+    }
+
+    @Test
+    fun mergedTripDecidesItsPurposeAgain() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(100f))
+        book.onTripEnded(2_000, "COUNTDOWN", reading(110f), outcome(Purpose.PERSONAL))
+
+        val merged = book.onTripStarted(2_300, merged = true, reading(110f))
+        assertNull(merged.purpose)
+        assertTrue(merged.purposeProvisional)
+        assertNull(db.tripDao().getLastEndedWithPurpose())
+
+        val ended = book.onTripEnded(3_000, "COUNTDOWN", reading(120f), outcome(Purpose.BUSINESS))!!
+        assertEquals("BUSINESS", ended.purpose)
+    }
+
+    @Test
+    fun tripClosedOnResumeGetsTheGivenOutcome() = runTest {
+        book.onTripStarted(1_000, merged = false, reading(100f))
+
+        val closed = book.onAppResumed(5_000, drivingNow = false, reading(130f), endOutcome = outcome(Purpose.BUSINESS, answered = false))!!
+
+        assertEquals(TripEntity.END_APP_RESTART, closed.endReason)
+        assertEquals("BUSINESS", closed.purpose)
+        assertTrue(closed.purposeProvisional)
+    }
 
     @Test
     fun tripFrom12340To12362Is22Km() = runTest {

@@ -22,8 +22,10 @@ data class TripEntity(
     val driverId: String? = null,
     /** true while the driver is the default and not confirmed yet */
     val driverProvisional: Boolean = true,
-    /** BUSINESS, COMMUTE, PERSONAL; null until decided */
+    /** BUSINESS, COMMUTE, PERSONAL (trip Purpose); null until the trip ends */
     val purpose: String? = null,
+    /** true when nobody answered the trip-end card and the suggested purpose was saved */
+    val purposeProvisional: Boolean = true,
     /** Cleared when the trip is PERSONAL (CLAUDE.md rule 6) */
     val destinationName: String? = null,
     val expectedTollFare: Int? = null,
