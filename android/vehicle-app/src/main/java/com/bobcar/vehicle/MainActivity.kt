@@ -12,7 +12,9 @@ import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.service.CollectionService
 import com.bobcar.vehicle.service.VehicleRuntime
 import com.bobcar.vehicle.ui.DiagnosticScreen
+import com.bobcar.vehicle.ui.DriverCard
 import com.bobcar.vehicle.ui.TripScreen
+import com.bobcar.vehicle.ui.showsDriverCard
 import com.bobcar.vehicle.ui.showsTripScreen
 import com.bobcar.vehicle.upload.UploadStatus
 
@@ -34,6 +36,7 @@ class MainActivity : ComponentActivity() {
         val pendingUploadCountFlow = db.uploadQueueDao().pendingCountFlow()
         val activeTripFlow = db.tripDao().activeFlow()
         val lastTripFlow = db.tripDao().lastEndedFlow()
+        val driversFlow = db.driverDao().activeFlow()
 
         setContent {
             val snapshot by signals.snapshot.collectAsState()
@@ -45,9 +48,14 @@ class MainActivity : ComponentActivity() {
             val upload by UploadStatus.state.collectAsState()
             val activeTrip by activeTripFlow.collectAsState(initial = null)
             val lastTrip by lastTripFlow.collectAsState(initial = null)
+            val checkin by VehicleRuntime.checkin.state.collectAsState()
+            val drivers by driversFlow.collectAsState(initial = emptyList())
             MaterialTheme(colorScheme = darkColorScheme()) {
+                val currentCheckin = checkin
                 if (showsTripScreen(state)) {
                     TripScreen(state, activeTrip, snapshot.odometerKm)
+                } else if (currentCheckin != null && showsDriverCard(state, currentCheckin, snapshot.gear)) {
+                    DriverCard(currentCheckin, drivers, onConfirm = VehicleRuntime::confirmDriver)
                 } else {
                     DiagnosticScreen(
                         snapshot, state, recentEvents, fakeMode, storedEventCount, pendingUploadCount, upload, lastTrip,
