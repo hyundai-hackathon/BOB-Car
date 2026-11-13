@@ -117,6 +117,27 @@ object VehicleRuntime {
         tripRecorder?.choosePurpose(purpose)
     }
 
+    /** [계속 운행] on the trip-end card. */
+    fun continueTrip() {
+        monitor.onContinueTapped()
+    }
+
+    /** [변경] on the trip-end card: the driver list opens and the countdown waits. */
+    fun openEndDriverList() {
+        monitor.pauseEndCountdown()
+    }
+
+    /** [뒤로] on that driver list: back to the card, the countdown starts again. */
+    fun closeEndDriverList() {
+        monitor.resumeEndCountdown()
+    }
+
+    /** A driver picked on that list: confirmed for the trip, back to the card. */
+    fun pickEndDriver(driverId: String) {
+        confirmDriver(driverId)
+        monitor.resumeEndCountdown()
+    }
+
     /** Consent card answered by [driverId]: [동의] (agreed) or [나중에]. */
     fun answerConsent(driverId: String, agreed: Boolean) {
         tripRecorder?.answerConsent(driverId, agreed)

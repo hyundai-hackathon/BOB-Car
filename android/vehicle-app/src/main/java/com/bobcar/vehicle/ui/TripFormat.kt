@@ -19,4 +19,10 @@ internal object TripFormat {
     }
 
     fun destination(name: String?): String = name ?: "목적지 없음"
+
+    /** Trip time in whole minutes: "32분", "1시간 5분". */
+    fun duration(millis: Long): String {
+        val minutes = (millis.coerceAtLeast(0) / 60_000).toInt()
+        return if (minutes < 60) "${minutes}분" else "${minutes / 60}시간 ${minutes % 60}분"
+    }
 }

@@ -23,17 +23,13 @@ import com.bobcar.vehicle.signal.Gear
 
 /**
  * Waiting screen while a trip runs. Display only: no buttons or input of any kind, so it is safe
- * while driving (CLAUDE.md rule 3). The [계속 운행] button on the countdown comes with the trip-end card.
+ * while driving (CLAUDE.md rule 3). The end countdown in P shows [TripEndCard] instead.
  */
 @Composable
 fun TripScreen(state: DrivingState, trip: TripEntity?, odometerKm: Float?) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(48.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val title = when (state) {
-                is DrivingState.EndCountdown -> "운행 종료까지 ${remainingSeconds(state.deadline)}초"
-                else -> "운행 중"
-            }
-            Text(title, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+            Text("운행 중", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(24.dp))
             if (trip == null) {
                 Text("운행 기록 준비 중", style = MaterialTheme.typography.titleLarge)
@@ -56,9 +52,8 @@ private fun Item(label: String, value: String) {
     }
 }
 
-/** Trip screen for the whole trip (including P after [계속 운행]); the diagnostic screen otherwise. */
-fun showsTripScreen(state: DrivingState): Boolean =
-    state is DrivingState.Driving || state is DrivingState.EndCountdown
+/** Trip screen while driving (including P after [계속 운행]); the end countdown has its own card. */
+fun showsTripScreen(state: DrivingState): Boolean = state is DrivingState.Driving
 
 @Preview(widthDp = 1280, heightDp = 720)
 @Composable

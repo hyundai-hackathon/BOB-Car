@@ -13,8 +13,11 @@ sealed interface DrivingState {
     /** Trip running. [gear] is the last settled gear (P only after [계속 운행]). */
     data class Driving(val tripStartedAt: Long, val gear: Gear) : DrivingState
 
-    /** Trip running, gear settled in P, countdown to the end of the trip. */
-    data class EndCountdown(val tripStartedAt: Long, val deadline: Long) : DrivingState
+    /**
+     * Trip running, gear settled in P, countdown to the end of the trip (trip-end card).
+     * [paused] while the driver list ([변경]) is open; it starts again from the full time when closed.
+     */
+    data class EndCountdown(val tripStartedAt: Long, val deadline: Long, val paused: Boolean = false) : DrivingState
 
     /** Trip ended while the driver is still seated. */
     data class Parked(val tripEndedAt: Long) : DrivingState

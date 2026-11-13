@@ -13,6 +13,7 @@ import com.bobcar.vehicle.signal.SignalEvent
  * - TripStarted: settled gear leaves P. Same confirmed driver within [mergeWindowMs] of the last end
  *   continues the previous trip.
  * - EndCountdown: settled gear returns to P during a trip. [계속 운행] or leaving P cancels it.
+ *   It waits while the driver list is open on the trip-end card, then starts again from the full time.
  * - TripEnded: countdown runs out, or the driver seat empties / driver door opens while in P.
  *
  * Pure Kotlin: time comes in with every call and the countdown is advanced by [onTick], so the
@@ -73,10 +74,23 @@ class DrivingStateMachine(
         emit(DrivingEvent.EndCountdownCancelled(at, CancelReason.CONTINUE_TAPPED))
     }
 
-    /** Called by a timer; ends the trip once the countdown deadline has passed. */
+    /** [변경] on the trip-end card: the countdown waits while the driver list is open. */
+    fun onEndCountdownPaused() {
+        val s = state as? DrivingState.EndCountdown ?: return
+        state = s.copy(paused = true)
+    }
+
+    /** The driver list closed (driver picked or [뒤로]): the full countdown starts again. */
+    fun onEndCountdownResumed(at: Long) {
+        val s = state as? DrivingState.EndCountdown ?: return
+        if (!s.paused) return
+        state = s.copy(deadline = at + countdownMs, paused = false)
+    }
+
+    /** Called by a timer; ends the trip once the countdown deadline has passed (not while paused). */
     fun onTick(now: Long) {
         val s = state as? DrivingState.EndCountdown ?: return
-        if (now >= s.deadline) endTrip(EndReason.COUNTDOWN, now)
+        if (!s.paused && now >= s.deadline) endTrip(EndReason.COUNTDOWN, now)
     }
 
     // ---------------------------------------------------------------- inputs

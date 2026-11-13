@@ -11,11 +11,13 @@ import androidx.compose.runtime.getValue
 import com.bobcar.vehicle.checkin.Briefing
 import com.bobcar.vehicle.checkin.showsConsentCard
 import com.bobcar.vehicle.data.BobCarDatabase
+import com.bobcar.vehicle.driving.DrivingState
 import com.bobcar.vehicle.service.CollectionService
 import com.bobcar.vehicle.service.VehicleRuntime
 import com.bobcar.vehicle.ui.ConsentCard
 import com.bobcar.vehicle.ui.DiagnosticScreen
 import com.bobcar.vehicle.ui.DriverCard
+import com.bobcar.vehicle.ui.TripEndCard
 import com.bobcar.vehicle.ui.TripScreen
 import com.bobcar.vehicle.ui.showsDriverCard
 import com.bobcar.vehicle.ui.showsTripScreen
@@ -58,10 +60,26 @@ class MainActivity : ComponentActivity() {
             val baseline by baselineFlow.collectAsState(initial = null)
             // null until loaded, so a driver who already agreed never sees the card flash
             val consents by consentsFlow.collectAsState(initial = null)
+            val endChoice by VehicleRuntime.tripEnd.state.collectAsState()
             MaterialTheme(colorScheme = darkColorScheme()) {
                 val currentCheckin = checkin
                 val consentDriverId = currentCheckin?.confirmedDriverId
-                if (showsTripScreen(state)) {
+                val drivingState = state
+                if (drivingState is DrivingState.EndCountdown) {
+                    // Gear settled in P during a trip: confirm driver and purpose before the trip is saved
+                    TripEndCard(
+                        state = drivingState,
+                        trip = activeTrip,
+                        choice = endChoice,
+                        drivers = drivers,
+                        odometerKm = snapshot.odometerKm,
+                        onContinue = VehicleRuntime::continueTrip,
+                        onPurpose = VehicleRuntime::choosePurpose,
+                        onOpenDrivers = VehicleRuntime::openEndDriverList,
+                        onPickDriver = VehicleRuntime::pickEndDriver,
+                        onCloseDrivers = VehicleRuntime::closeEndDriverList,
+                    )
+                } else if (showsTripScreen(state)) {
                     TripScreen(state, activeTrip, snapshot.odometerKm)
                 } else if (consentDriverId != null && showsConsentCard(state, currentCheckin, snapshot.gear, consents)) {
                     // Before V5: the confirmed driver answers the consent card first (first check-in only)
