@@ -137,6 +137,10 @@ interface ReservationDao {
     @Query("SELECT * FROM reservation WHERE startAt <= :at AND :at < endAt ORDER BY startAt DESC LIMIT 1")
     suspend fun getAt(at: Long): ReservationEntity?
 
+    /** Removes the reservations overlapping [start, end) (replaced by the server's). */
+    @Query("DELETE FROM reservation WHERE startAt < :end AND endAt > :start")
+    suspend fun deleteOverlapping(start: Long, end: Long): Int
+
     /** Removes the reservations covering [at] (debug: test the no-reservation case). */
     @Query("DELETE FROM reservation WHERE startAt <= :at AND :at < endAt")
     suspend fun deleteAt(at: Long): Int
@@ -152,12 +156,12 @@ interface UploadQueueDao {
     suspend fun getPending(limit: Int): List<UploadQueueEntity>
 
     /**
-     * Unsent items to send now: records of [driverIds] (drivers who agreed) only, oldest first,
-     * skipping ones the server refused [maxAttempts] times.
+     * Unsent items to send now: records of [driverIds] (drivers who agreed) only, consent records first,
+     * then oldest first, skipping ones the server refused [maxAttempts] times.
      */
     @Query(
         "SELECT * FROM upload_queue WHERE sentAt IS NULL AND attempts < :maxAttempts AND driverId IN (:driverIds) " +
-            "ORDER BY id LIMIT :limit",
+            "ORDER BY (kind = 'consent') DESC, id LIMIT :limit",
     )
     suspend fun getSendable(limit: Int, maxAttempts: Int, driverIds: List<String>): List<UploadQueueEntity>
 

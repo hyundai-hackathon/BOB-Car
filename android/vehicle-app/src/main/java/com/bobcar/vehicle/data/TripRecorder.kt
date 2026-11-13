@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
  * - Boarded, TripStarted or resumed with no trip running: the reading is compared with the last snapshot
  *   for a charge or an unrecorded drive ([GapDetector]); the events belong to the driver who found them
  * - voice guidance ([announce]): briefing on boarding, the driver card's answer, a provisional driver
+ * - every change of a trip row is queued for the server ([recordTrip]; battery % with an ended trip)
  *
  * Readings are taken from the signal snapshot on the signal thread when the event happens, then
  * everything is written one at a time in arrival order (so the check-in is always ready before the
@@ -63,6 +64,8 @@ class TripRecorder(
     private val claimFindings: (String) -> Unit = {},
     /** Voice guidance for check-in moments (says names; never logged). */
     private val announce: (Announcement) -> Unit = {},
+    /** Queues the trip row for the server (row, battery % at the end for an ended trip). */
+    private val recordTrip: (TripEntity, Int?) -> Unit = { _, _ -> },
 ) {
 
     private val book = TripBook(db)
@@ -88,6 +91,7 @@ class TripRecorder(
                 if (db.tripDao().getActive() == null) gaps.checkNow(EnergySnapshotEntity.KIND_TRIP_START, at, reading)
                 val trip = book.onTripStarted(at, event.mergedWithPrevious, reading, checkinDriver())
                 val merged = event.mergedWithPrevious && trip.startedAt != at
+                recordTrip(trip, null)
                 Log.i(TAG, "trip #${trip.id} running${if (merged) " (merged)" else ""} ${describe(trip)}")
             }
             is DrivingEvent.EndCountdownStarted -> write("end card") { prepareEndChoice() }
@@ -100,6 +104,7 @@ class TripRecorder(
                     Log.w(TAG, "trip end (${event.reason}) with no running trip")
                 } else {
                     recordPurpose(trip, at)
+                    recordTrip(trip, reading.socPercent)
                     Log.i(TAG, "trip #${trip.id} ended (${trip.endReason}) ${describe(trip)}")
                 }
             }
@@ -126,6 +131,10 @@ class TripRecorder(
                 }
                 val trip = book.onAppResumed(at, drivingNow, reading, driver, closing?.let { endOutcome(it) })
                 if (closing != null && trip != null) recordPurpose(trip, at)
+                // Started or closed here: the server learns of it too
+                if (trip != null && (closing != null || trip.startedAt == at)) {
+                    recordTrip(trip, if (trip.status == TripEntity.STATUS_ENDED) reading.socPercent else null)
+                }
                 Log.i(TAG, "resume drivingNow=$drivingNow trip=${trip?.let { "#${it.id} ${it.status} ${describe(it)}" } ?: "none"}")
             }
             else -> Unit
@@ -138,7 +147,10 @@ class TripRecorder(
             write("route") {
                 val trip = book.onRouteStarted(route)
                 if (trip == null) Log.i(TAG, "route kept for the next trip: dest=${maskForLog(route.destinationName)} toll=${route.tollFare}")
-                else Log.i(TAG, "route on trip #${trip.id}: ${describe(trip)}")
+                else {
+                    recordTrip(trip, null)
+                    Log.i(TAG, "route on trip #${trip.id}: ${describe(trip)}")
+                }
             }
         }
     }
@@ -151,7 +163,12 @@ class TripRecorder(
         scope.launch {
             signals.snapshot.map { it.odometerKm }.filterNotNull().distinctUntilChanged().collect { km ->
                 runCatching { book.onOdometer(km) }
-                    .onSuccess { trip -> trip?.let { Log.i(TAG, "trip #${it.id} start odometer filled: ${it.startOdometerKm} km") } }
+                    .onSuccess { trip ->
+                        trip?.let {
+                            recordTrip(it, null)
+                            Log.i(TAG, "trip #${it.id} start odometer filled: ${it.startOdometerKm} km")
+                        }
+                    }
                     .onFailure { Log.e(TAG, "odometer fill failed", it) }
             }
         }
@@ -177,6 +194,7 @@ class TripRecorder(
         state?.let { assignDriver(it.boardedAt - ASSIGN_MARGIN_MS, driverId) }
         claimFindings(driverId)
         val trip = book.onDriverConfirmed(driverId)
+        trip?.let { recordTrip(it, null) }
         // Chosen with [변경] on the trip-end card (or the driver card while it is up): the card shows it
         val onEndCard = trip != null && endChoices.current?.tripId == trip.id
         if (onEndCard) endChoices.chooseDriver(driverId)

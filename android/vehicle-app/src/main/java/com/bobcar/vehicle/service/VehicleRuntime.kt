@@ -8,6 +8,7 @@ import com.bobcar.vehicle.checkin.DriverCheckin
 import com.bobcar.vehicle.checkin.DriverDefaults
 import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.data.DrivingRecorder
+import com.bobcar.vehicle.data.ServerSync
 import com.bobcar.vehicle.data.TripRecorder
 import com.bobcar.vehicle.debug.FakeHooks
 import com.bobcar.vehicle.debug.FakeSignalInjector
@@ -16,12 +17,20 @@ import com.bobcar.vehicle.driving.DrivingMonitor
 import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.NaviGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
+import com.bobcar.vehicle.server.ServerApi
+import com.bobcar.vehicle.server.ServerClients
+import com.bobcar.vehicle.server.ServerConfig
 import com.bobcar.vehicle.signal.VehicleSignals
 import com.bobcar.vehicle.trip.Purpose
 import com.bobcar.vehicle.trip.TripEndChoices
 import com.bobcar.vehicle.upload.UploadScheduler
 import com.bobcar.vehicle.voice.VoiceGateway
 import com.bobcar.vehicle.voice.VoiceGuide
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Everything that collects and records vehicle data, owned by [CollectionService] (one per process).
@@ -58,6 +67,8 @@ object VehicleRuntime {
     private var unregisterFakeSignals: (() -> Unit)? = null
     private var voice: VoiceGateway? = null
     private var voiceListener: ((DrivingEvent) -> Unit)? = null
+    private var syncListener: ((DrivingEvent) -> Unit)? = null
+    private var syncScope: CoroutineScope? = null
 
     @Synchronized
     fun start(context: Context) {
@@ -85,6 +96,7 @@ object VehicleRuntime {
             assignDriver = rec::assignDriver,
             claimFindings = rec::claimFindings,
             announce = guide::announce,
+            recordTrip = rec::recordTrip,
         ).also { tripRecorder = it }
         monitor.addEventListener(trips.onDrivingEvent)
         // Voice ③: the end countdown (and silence when it is cancelled)
@@ -94,6 +106,20 @@ object VehicleRuntime {
         monitor.start()
         // Send what piled up while the app or the server was off
         UploadScheduler.request(app)
+
+        // Server values (drivers, today's reservations, vehicle baseline) into the local DB: now and on each boarding
+        val config = ServerConfig.current
+        val sync = if (config.configured) ServerSync(db, ServerApi(config, ServerClients.tokens(app))) else null
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { syncScope = it }
+        val runSync = {
+            sync?.let { s ->
+                scope.launch { runCatching { s.refresh(System.currentTimeMillis()) }.onFailure { Log.w(TAG, "server sync failed", it) } }
+            }
+        }
+        runSync()
+        val onBoardedSync: (DrivingEvent) -> Unit = { if (it is DrivingEvent.Boarded) runSync() }
+        syncListener = onBoardedSync
+        monitor.addEventListener(onBoardedSync)
 
         val v = VehicleGateway(app).also { vehicle = it }
         val c = CarPropertyGateway(app).also { carProperty = it }
@@ -105,7 +131,11 @@ object VehicleRuntime {
         val hooks = FakeHooks(
             continueTapped = monitor::onContinueTapped,
             confirmDriver = ::confirmDriver,
-            setReservation = trips::setReservationNow,
+            setReservation = { driverId ->
+                // A fake reservation stays until the app restarts (server reservations would replace it)
+                sync?.keepLocalReservations = true
+                trips.setReservationNow(driverId)
+            },
             resetConsent = trips::resetConsent,
             choosePurpose = ::choosePurpose,
             failVoice = speaker::simulateFailure,
@@ -174,6 +204,10 @@ object VehicleRuntime {
         val trips = tripRecorder
         voiceListener?.let { monitor.removeEventListener(it) }
         voiceListener = null
+        syncListener?.let { monitor.removeEventListener(it) }
+        syncListener = null
+        syncScope?.cancel()
+        syncScope = null
         voice?.release()
         voice = null
         initHandler.post {
