@@ -60,6 +60,24 @@ class DrivingRecorder(
         }
     }
 
+    /**
+     * Charge and unrecorded-drive events found while nobody was checked in become [driverId]'s
+     * (the driver who boards next found them).
+     */
+    fun claimFindings(driverId: String) {
+        scope.launch {
+            try {
+                val changed = db.uploadQueueDao().claimUnowned(driverId, GapDetector.EVENT_TYPES)
+                if (changed == 0) return@launch
+                Log.d(TAG, "queue findings driver=$driverId rows=$changed")
+            } catch (e: Exception) {
+                Log.e(TAG, "queue findings claim failed", e)
+                return@launch
+            }
+            onStored()
+        }
+    }
+
     private fun store(type: String, detail: String?, occurredAt: Long, kind: String, fixedDriverId: String?) {
         scope.launch {
             val driverId = fixedDriverId ?: currentDriver()

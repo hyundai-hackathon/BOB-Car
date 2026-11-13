@@ -125,6 +125,35 @@ class BobCarDatabaseTest {
     }
 
     @Test
+    fun unownedFindingsAreClaimedByTheNextDriver() = runTest {
+        val events = db.vehicleEventDao()
+        val queue = db.uploadQueueDao()
+        suspend fun enqueue(type: String, driverId: String?, sentAt: Long? = null): Long {
+            val eventId = events.insert(VehicleEventEntity(type = type, occurredAt = 1_000))
+            return queue.insert(
+                UploadQueueEntity(
+                    kind = "vehicle_event", refId = eventId, payloadJson = "{}", createdAt = 1_000,
+                    driverId = driverId, sentAt = sentAt,
+                ),
+            )
+        }
+        val unrecorded = enqueue(GapDetector.EVENT_UNRECORDED_DRIVE, null)
+        val charge = enqueue(GapDetector.EVENT_CHARGE, null)
+        val owned = enqueue(GapDetector.EVENT_CHARGE, "lee")
+        val otherEvent = enqueue("AppResumed", null)
+        val sent = enqueue(GapDetector.EVENT_CHARGE, null, sentAt = 2_000)
+
+        assertEquals(2, queue.claimUnowned("kim", GapDetector.EVENT_TYPES))
+
+        val drivers = queue.getPending(10).associate { it.id to it.driverId }
+        assertEquals("kim", drivers[unrecorded])
+        assertEquals("kim", drivers[charge])
+        assertEquals("lee", drivers[owned])
+        assertNull(drivers[otherEvent])
+        assertTrue(sent !in drivers)
+    }
+
+    @Test
     fun onlyActiveDriversAreListed() = runTest {
         val dao = db.driverDao()
         dao.upsertAll(listOf(DriverEntity("kim", "김"), DriverEntity("lee", "이", active = false)))
