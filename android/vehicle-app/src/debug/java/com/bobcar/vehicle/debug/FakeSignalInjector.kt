@@ -33,6 +33,7 @@ import com.bobcar.vehicle.util.maskForLog
  *   reservation <id> | none   mock reservation covering now: this driver for today, or none
  *   consent-reset <id>        forget this driver's consent answer (the consent card shows again)
  *   purpose  BUSINESS | COMMUTE | PERSONAL   purpose tapped on the trip-end card
+ *   tts-fail (no value)       voice guidance acts as if TTS initialization failed (screen only until restart)
  */
 object FakeSignalInjector {
 
@@ -72,6 +73,7 @@ object FakeSignalInjector {
                         else -> true.also { hooks.setReservation(value) }
                     }
                     "consent-reset" -> value?.takeIf { it.isNotBlank() }?.let { hooks.resetConsent(it) } != null
+                    "tts-fail" -> true.also { hooks.failVoice() }
                     "purpose" -> Purpose.entries.firstOrNull { it.name == value?.uppercase() }?.let { hooks.choosePurpose(it) } != null
                     else -> false
                 }

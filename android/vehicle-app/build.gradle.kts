@@ -60,6 +60,8 @@ android {
 dependencies {
     implementation(libs.pleos.vehicle.sdk)
     implementation(libs.pleos.navi.helper)
+    // Voice guidance, on-device mode only (no server credentials in the app)
+    implementation(libs.pleos.text.to.speech)
     // Vehicle SDK pulls kotlin-reflect 1.9.25; pin it to the project's Kotlin version (same as the official sample)
     implementation(libs.kotlin.reflect)
     // StateFlow for the signal snapshot (same version the SDK and lifecycle already resolve to)

@@ -14,4 +14,6 @@ class FakeHooks(
     val resetConsent: (String) -> Unit,
     /** A purpose tapped on the trip-end card. */
     val choosePurpose: (Purpose) -> Unit,
+    /** Voice guidance behaves as if TTS initialization had failed (screen only from now on). */
+    val failVoice: () -> Unit,
 )

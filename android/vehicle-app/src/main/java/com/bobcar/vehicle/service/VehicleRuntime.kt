@@ -20,6 +20,8 @@ import com.bobcar.vehicle.signal.VehicleSignals
 import com.bobcar.vehicle.trip.Purpose
 import com.bobcar.vehicle.trip.TripEndChoices
 import com.bobcar.vehicle.upload.UploadScheduler
+import com.bobcar.vehicle.voice.VoiceGateway
+import com.bobcar.vehicle.voice.VoiceGuide
 
 /**
  * Everything that collects and records vehicle data, owned by [CollectionService] (one per process).
@@ -54,12 +56,19 @@ object VehicleRuntime {
     private var naviRefreshListener: ((DrivingEvent) -> Unit)? = null
     private var tripRecorder: TripRecorder? = null
     private var unregisterFakeSignals: (() -> Unit)? = null
+    private var voice: VoiceGateway? = null
+    private var voiceListener: ((DrivingEvent) -> Unit)? = null
 
     @Synchronized
     fun start(context: Context) {
         if (started) return
         started = true
         val app = context.applicationContext
+
+        // Voice guidance (on-device TTS). Starts first: initialization takes a while and must not hold up recording
+        val speaker = VoiceGateway(app).also { voice = it }
+        speaker.initialize()
+        val guide = VoiceGuide(speaker)
 
         val db = BobCarDatabase.get(app)
         // Queue entries carry the checked-in driver, so the upload can hold back drivers who did not agree
@@ -75,8 +84,12 @@ object VehicleRuntime {
             recordConsent = rec::recordConsent,
             assignDriver = rec::assignDriver,
             claimFindings = rec::claimFindings,
+            announce = guide::announce,
         ).also { tripRecorder = it }
         monitor.addEventListener(trips.onDrivingEvent)
+        // Voice ③: the end countdown (and silence when it is cancelled)
+        monitor.addEventListener(guide.onDrivingEvent)
+        voiceListener = guide.onDrivingEvent
         trips.start()
         monitor.start()
         // Send what piled up while the app or the server was off
@@ -95,6 +108,7 @@ object VehicleRuntime {
             setReservation = trips::setReservationNow,
             resetConsent = trips::resetConsent,
             choosePurpose = ::choosePurpose,
+            failVoice = speaker::simulateFailure,
         )
         unregisterFakeSignals = FakeSignalInjector.register(app, signals, v, c, hooks)
 
@@ -158,6 +172,10 @@ object VehicleRuntime {
         val n = navi
         val rec = recorder
         val trips = tripRecorder
+        voiceListener?.let { monitor.removeEventListener(it) }
+        voiceListener = null
+        voice?.release()
+        voice = null
         initHandler.post {
             n?.release()
             c?.release()

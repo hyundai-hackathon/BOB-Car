@@ -1,6 +1,7 @@
 package com.bobcar.vehicle.data
 
 import android.util.Log
+import com.bobcar.vehicle.checkin.Briefing
 import com.bobcar.vehicle.checkin.ConsentNotice
 import com.bobcar.vehicle.checkin.DriverCheckin
 import com.bobcar.vehicle.checkin.DriverDefaults
@@ -14,6 +15,7 @@ import com.bobcar.vehicle.trip.Purpose
 import com.bobcar.vehicle.trip.PurposeDefaults
 import com.bobcar.vehicle.trip.TripEndChoices
 import com.bobcar.vehicle.util.maskForLog
+import com.bobcar.vehicle.voice.Announcement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -38,6 +40,7 @@ import kotlinx.coroutines.launch
  * - check-in started or confirmed: unsent records of this stay in the seat follow that driver ([assignDriver])
  * - Boarded, TripStarted or resumed with no trip running: the reading is compared with the last snapshot
  *   for a charge or an unrecorded drive ([GapDetector]); the events belong to the driver who found them
+ * - voice guidance ([announce]): briefing on boarding, the driver card's answer, a provisional driver
  *
  * Readings are taken from the signal snapshot on the signal thread when the event happens, then
  * everything is written one at a time in arrival order (so the check-in is always ready before the
@@ -58,6 +61,8 @@ class TripRecorder(
     private val assignDriver: (Long, String?) -> Unit = { _, _ -> },
     /** Charge and unrecorded-drive events nobody owns yet become this driver's (the one who found them). */
     private val claimFindings: (String) -> Unit = {},
+    /** Voice guidance for check-in moments (says names; never logged). */
+    private val announce: (Announcement) -> Unit = {},
 ) {
 
     private val book = TripBook(db)
@@ -74,6 +79,7 @@ class TripRecorder(
         when (event) {
             is DrivingEvent.Boarded -> write("check-in") {
                 startCheckin(at)
+                announceBriefing(reading)
                 gaps.request(EnergySnapshotEntity.KIND_BOARDING, at, reading)
             }
             is DrivingEvent.CheckinClosed -> write("check-in close") { closeCheckin(at) }
@@ -100,7 +106,10 @@ class TripRecorder(
             is DrivingEvent.AppResumed -> write("resume") {
                 // Seated without a trip: the driver card is due again. Not seated: nobody to check in.
                 when (event.state) {
-                    is DrivingState.CheckingIn -> if (checkin.current == null) startCheckin(at)
+                    is DrivingState.CheckingIn -> if (checkin.current == null) {
+                        startCheckin(at)
+                        announceBriefing(reading)
+                    }
                     DrivingState.Idle -> checkin.clear()
                     else -> Unit
                 }
@@ -158,7 +167,8 @@ class TripRecorder(
 
     /** The driver card was answered (or [다른 사람] chosen). Unknown or inactive IDs are ignored. */
     fun confirmDriver(driverId: String) = write("driver confirm") {
-        if (db.driverDao().getActiveById(driverId) == null) {
+        val driver = db.driverDao().getActiveById(driverId)
+        if (driver == null) {
             Log.w(TAG, "driver confirm ignored: $driverId is not an active driver")
             return@write
         }
@@ -168,7 +178,10 @@ class TripRecorder(
         claimFindings(driverId)
         val trip = book.onDriverConfirmed(driverId)
         // Chosen with [변경] on the trip-end card (or the driver card while it is up): the card shows it
-        if (trip != null && endChoices.current?.tripId == trip.id) endChoices.chooseDriver(driverId)
+        val onEndCard = trip != null && endChoices.current?.tripId == trip.id
+        if (onEndCard) endChoices.chooseDriver(driverId)
+        // Voice ① only for the driver card (the trip-end card shows the change on screen)
+        if (state != null && !onEndCard) announce(Announcement.CheckedIn(driver.name))
         recordEvent(EVENT_DRIVER_CONFIRMED, "driver=$driverId", at)
         Log.i(TAG, "driver confirmed: $driverId (check-in=${state != null}, trip=${trip?.id ?: "none"})")
     }
@@ -235,7 +248,15 @@ class TripRecorder(
         if (!state.provisional) return
         val detail = state.default?.let { "driver=${it.driverId} source=${it.source}" } ?: "driver=none"
         recordEvent(EVENT_DRIVER_PROVISIONAL, detail, at)
+        val name = state.default?.driverId?.let { db.driverDao().getActiveById(it)?.name }
+        announce(Announcement.Provisional(name))
         Log.i(TAG, "check-in closed unconfirmed, provisional $detail")
+    }
+
+    /** Voice ②: the same briefing the driver card shows (battery %, unrecorded drive since the last record). */
+    private suspend fun announceBriefing(reading: TripBook.Reading) {
+        val lastRecordedKm = db.vehicleBaselineDao().get()?.lastOdometerKm
+        announce(Announcement.Boarded(Briefing.of(reading.socPercent, reading.odometerKm, lastRecordedKm)))
     }
 
     // ---------------------------------------------------------------- trip end (write queue)
