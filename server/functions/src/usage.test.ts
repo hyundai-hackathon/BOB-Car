@@ -187,3 +187,19 @@ describe("② unrecorded drive", () => {
     expect((await db().collection(COL.flags).where("kind", "==", "UNRECORDED_DRIVE").get()).size).toBe(1);
   });
 });
+
+describe("seed reservations on an emulator left running", () => {
+  it("a new Korea-time day gets its own reservation on its first call", async () => {
+    const { ensureSeeded } = await import("./seed");
+    const today = koreaDay(Date.now()).startAt;
+    const tomorrow = today + DAY;
+
+    await ensureSeeded(today + 60 * MIN);
+    await ensureSeeded(tomorrow + 60 * MIN);
+
+    const reservations = await db().collection(COL.reservations).where("vehicleId", "==", VEHICLE).get();
+    const starts = reservations.docs.map((d) => d.get("startAt") as number).sort();
+    expect(starts).toEqual([today, tomorrow]);
+    expect(reservations.docs.every((d) => d.get("driverId") === HOLDER)).toBe(true);
+  });
+});
