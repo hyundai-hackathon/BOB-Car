@@ -6,6 +6,9 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
+// Hosting serves a copy of the admin web (see copy-admin-web.js)
+require("./copy-admin-web");
+
 const dataDir = path.resolve(__dirname, "..", "..", "emulator-data");
 const args = ["emulators:start", "--project", "demo-bobcar", "--export-on-exit", dataDir];
 if (fs.existsSync(path.join(dataDir, "firebase-export-metadata.json"))) args.push("--import", dataDir);
