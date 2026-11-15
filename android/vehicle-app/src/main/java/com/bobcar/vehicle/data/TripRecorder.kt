@@ -2,7 +2,7 @@ package com.bobcar.vehicle.data
 
 import android.util.Log
 import com.bobcar.vehicle.checkin.Briefing
-import com.bobcar.vehicle.checkin.ConsentNotice
+import com.bobcar.shared.consent.ConsentNotice
 import com.bobcar.vehicle.checkin.DriverCheckin
 import com.bobcar.vehicle.checkin.DriverDefaults
 import com.bobcar.vehicle.driving.DrivingEvent

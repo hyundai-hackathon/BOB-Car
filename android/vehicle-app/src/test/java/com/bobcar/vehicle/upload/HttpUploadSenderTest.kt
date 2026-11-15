@@ -1,11 +1,12 @@
 package com.bobcar.vehicle.upload
 
 import com.bobcar.vehicle.data.UploadQueueEntity
-import com.bobcar.vehicle.server.HttpResponse
-import com.bobcar.vehicle.server.HttpTransport
-import com.bobcar.vehicle.server.IdTokenProvider
-import com.bobcar.vehicle.server.RefreshTokenStore
-import com.bobcar.vehicle.server.ServerConfig
+import com.bobcar.shared.server.HttpResponse
+import com.bobcar.shared.server.HttpTransport
+import com.bobcar.shared.server.IdTokenProvider
+import com.bobcar.shared.server.RefreshTokenStore
+import com.bobcar.shared.server.ServerConfig
+import com.bobcar.vehicle.server.VehicleServer
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -46,9 +47,9 @@ class HttpUploadSenderTest {
         }
     }
 
-    private val config = ServerConfig("http://10.0.2.2:5001/demo-bobcar/asia-northeast3", "http://10.0.2.2:9099", "emulator", "veh-001", debug = true)
+    private val server = VehicleServer(ServerConfig("http://10.0.2.2:5001/demo-bobcar/asia-northeast3", "http://10.0.2.2:9099", "emulator", debug = true), "veh-001")
 
-    private fun sender(server: FakeServer) = HttpUploadSender(config, IdTokenProvider(config, MemoryStore(), server), server)
+    private fun sender(server: FakeServer) = HttpUploadSender(this.server, IdTokenProvider(this.server.config, MemoryStore(), server), server)
 
     private val items = listOf(
         UploadQueueEntity(id = 11, kind = "vehicle_event", payloadJson = """{"eventId":5,"type":"Boarded","occurredAt":100,"detail":null}""", createdAt = 100, driverId = "drv-001"),
@@ -125,7 +126,7 @@ class HttpUploadSenderTest {
                 return HttpResponse(200, "{}")
             }
         }
-        val result = HttpUploadSender(config, IdTokenProvider(config, MemoryStore(), down), down).send(items)
+        val result = HttpUploadSender(this.server, IdTokenProvider(this.server.config, MemoryStore(), down), down).send(items)
 
         assertTrue(result is SendResult.Retry)
         assertEquals(0, down.uploads)

@@ -18,8 +18,8 @@ import com.bobcar.vehicle.gateway.CarPropertyGateway
 import com.bobcar.vehicle.gateway.NaviGateway
 import com.bobcar.vehicle.gateway.VehicleGateway
 import com.bobcar.vehicle.server.ServerApi
-import com.bobcar.vehicle.server.ServerClients
-import com.bobcar.vehicle.server.ServerConfig
+import com.bobcar.shared.server.ServerClients
+import com.bobcar.vehicle.server.VehicleServer
 import com.bobcar.vehicle.signal.VehicleSignals
 import com.bobcar.vehicle.trip.Purpose
 import com.bobcar.vehicle.trip.TripEndChoices
@@ -108,8 +108,8 @@ object VehicleRuntime {
         UploadScheduler.request(app)
 
         // Server values (drivers, today's reservations, vehicle baseline) into the local DB: now and on each boarding
-        val config = ServerConfig.current
-        val sync = if (config.configured) ServerSync(db, ServerApi(config, ServerClients.tokens(app))) else null
+        val server = VehicleServer.current
+        val sync = if (server.configured) ServerSync(db, ServerApi(server, ServerClients.tokens(app, server.config))) else null
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also { syncScope = it }
         val runSync = {
             sync?.let { s ->

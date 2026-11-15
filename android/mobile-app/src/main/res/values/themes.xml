@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.BOBCar" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Dark window behind the Compose screens (design background #161826), so no white flash on start -->
+    <style name="Theme.BOBCar" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bob_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

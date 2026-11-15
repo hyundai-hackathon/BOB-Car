@@ -49,7 +49,14 @@ export async function onDriverConfirmed(event: DocumentSnapshot): Promise<void> 
 
 /** A trip row changed: its driver (confirmed or provisional) is judged at the trip's start. */
 export async function onTripChanged(vehicleId: string, tripId: number): Promise<void> {
-  const trip = await db().collection(COL.trips).doc(`${vehicleId}_${tripId}`).get();
+  await onTripDocChanged(`${vehicleId}_${tripId}`);
+}
+
+/** Same for any trip document (a vehicle trip, or an unrecorded drive a driver claimed on the phone). */
+export async function onTripDocChanged(tripDocId: string): Promise<void> {
+  const trip = await db().collection(COL.trips).doc(tripDocId).get();
+  const vehicleId = trip.get("vehicleId");
+  if (typeof vehicleId !== "string") return;
   const driverId = trip.get("driverId");
   const startedAt = trip.get("startedAt");
   if (typeof driverId !== "string" || typeof startedAt !== "number") return;
@@ -60,11 +67,10 @@ export async function onTripChanged(vehicleId: string, tripId: number): Promise<
 export async function judgeUsage(vehicleId: string, driverId: string, at: number, source: UsageSource): Promise<void> {
   const reservation = await reservationAt(vehicleId, at);
   const slot = reservation ? reservation.id : `none-${koreaDate(at)}`;
-  if (reservation && reservation.get("driverId") === driverId) {
-    // The holder: a trip that ends up with the holder withdraws what it had flagged for someone else
-    if (source.type === "trip") await withdrawForTrip(vehicleId, slot, driverId, source);
-    return;
-  }
+  const holder = reservation !== null && reservation.get("driverId") === driverId;
+  // A trip now with [driverId] takes back what it had flagged for anyone else (e.g. fixed on the trip-end card or the phone)
+  if (source.type === "trip") await withdrawForTrip(vehicleId, slot, driverId, source, holder ? "예약자 운행으로 정정" : "운전자 정정");
+  if (holder) return;
   const ref = db().collection(COL.flags).doc(`usage_${vehicleId}_${slot}_${driverId}`);
   const now = Date.now();
   await db().runTransaction(async (tx) => {
@@ -97,11 +103,17 @@ export async function judgeUsage(vehicleId: string, driverId: string, at: number
 }
 
 /**
- * Trip [source] ended up with the reservation holder: occurrences of that trip (its row, and driver
- * confirmations made during its check-in or the trip) are taken out of other drivers' flags in the same
- * slot; a flag left with none is resolved as corrected.
+ * Trip [source] ended up with [driverId]: occurrences of that trip (its row, and driver confirmations made
+ * during its check-in or the trip) are taken out of other drivers' flags in the same slot; a flag left with
+ * none is resolved with [note].
  */
-async function withdrawForTrip(vehicleId: string, slot: string, holderId: string, source: Extract<UsageSource, { type: "trip" }>): Promise<void> {
+async function withdrawForTrip(
+  vehicleId: string,
+  slot: string,
+  driverId: string,
+  source: Extract<UsageSource, { type: "trip" }>,
+  note: string,
+): Promise<void> {
   const open = await db()
     .collection(COL.flags)
     .where("vehicleId", "==", vehicleId)
@@ -110,14 +122,14 @@ async function withdrawForTrip(vehicleId: string, slot: string, holderId: string
     .get();
   const from = source.startedAt - CHECKIN_LOOKBACK_MS;
   const to = source.endedAt ?? Number.MAX_SAFE_INTEGER;
-  for (const flag of open.docs.filter((d) => d.id.startsWith(`usage_${vehicleId}_${slot}_`) && d.get("driverId") !== holderId)) {
+  for (const flag of open.docs.filter((d) => d.id.startsWith(`usage_${vehicleId}_${slot}_`) && d.get("driverId") !== driverId)) {
     const occurrences = (flag.get("occurrences") as Occurrence[]) ?? [];
     const rest = occurrences.filter((o) => !(o.type === "trip" ? o.ref === source.ref : o.at >= from && o.at <= to));
     if (rest.length === occurrences.length) continue;
     const now = Date.now();
     await flag.ref.set(
       rest.length === 0
-        ? { occurrences: rest, tripCount: 0, status: FLAG_RESOLVED, note: "예약자 운행으로 정정", updatedAt: now, resolvedAt: now }
+        ? { occurrences: rest, tripCount: 0, status: FLAG_RESOLVED, note, updatedAt: now, resolvedAt: now }
         : { occurrences: rest, tripCount: new Set(rest.filter((o) => o.type === "trip").map((o) => o.ref)).size, updatedAt: now },
       { merge: true },
     );

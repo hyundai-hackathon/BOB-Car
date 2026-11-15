@@ -25,7 +25,7 @@ export interface VehicleView {
   plate: string | null;
 }
 
-interface Driver {
+export interface Driver {
   name: string;
   department: string | null;
   agreed: boolean;
@@ -75,6 +75,9 @@ export async function attentionView(vehicleId: string, now: number) {
         lastDriverName: nameOf(flag.get("lastDriverId")),
         foundByName: nameOf(flag.get("foundByDriverId")),
         tripDocId: flag.get("tripDocId") ?? null,
+        // Named on the phone but not yet taken by that driver (provisional), and their note
+        assignedDriverName: trip.exists ? nameOf(trip.get("driverId")) : null,
+        memo: trip.exists ? trip.get("memo") ?? null : null,
       });
     } else if (kind === FLAG_KIND_OUT_OF_RESERVATION) {
       const occurrences = (flag.get("occurrences") as Array<{ type: string; ref: string; at: number }>) ?? [];
@@ -118,6 +121,7 @@ function tripSummary(trip: DocumentSnapshot) {
     distanceKm: distanceOf(trip),
     purpose: (trip.get("purpose") as string | null) ?? null,
     purposeProvisional: trip.get("purposeProvisional") !== false,
+    memo: (trip.get("memo") as string | null | undefined) ?? null,
   };
 }
 
@@ -143,6 +147,12 @@ export interface LogbookRow {
   expectedTollFare: number | null;
   unrecorded: boolean;
   closedByServer: boolean;
+  /** The driver's note from the phone (visit purpose, passengers; also an explanation of a flag). */
+  memo: string | null;
+  /** Driver or purpose was set on the phone (audit trail in tripEdits). */
+  editedOnPhone: boolean;
+  /** An unrecorded drive that a driver later took as theirs on the phone. */
+  claimedUnrecorded: boolean;
 }
 
 export interface LogbookView {
@@ -205,6 +215,9 @@ export async function logbookView(vehicleId: string, month: string): Promise<Log
         expectedTollFare: num(t.get("expectedTollFare")),
         unrecorded,
         closedByServer: t.get("closedByServer") === true,
+        memo: (t.get("memo") as string | null | undefined) ?? null,
+        editedOnPhone: t.get("correction") !== undefined,
+        claimedUnrecorded: t.get("recordedFrom") === TRIP_STATUS_UNRECORDED,
       };
     })
     .sort((a, b) => b.startedAt - a.startedAt);
@@ -374,18 +387,20 @@ function remarks(row: LogbookRow): string {
   const provisional = [row.driverProvisional ? "운전자" : null, row.purposeProvisional ? "용도" : null].filter(Boolean);
   if (provisional.length > 0) parts.push(`${provisional.join("·")} 잠정`);
   if (row.closedByServer) parts.push("서버 자동 종료");
+  if (row.claimedUnrecorded) parts.push("미기록 운행을 운전자가 확인");
+  if (row.memo && row.purpose !== "PERSONAL") parts.push(`메모: ${row.memo}`);
   return parts.join(", ");
 }
 
 // ---------------------------------------------------------------- helpers
 
-async function vehicleOf(vehicleId: string): Promise<VehicleView | null> {
+export async function vehicleOf(vehicleId: string): Promise<VehicleView | null> {
   const v = await db().collection(COL.vehicles).doc(vehicleId).get();
   if (!v.exists) return null;
   return { vehicleId, name: v.get("name") ?? null, model: v.get("model") ?? null, plate: v.get("plate") ?? null };
 }
 
-async function driversById(): Promise<Map<string, Driver>> {
+export async function driversById(): Promise<Map<string, Driver>> {
   const snaps = await db().collection(COL.drivers).where("active", "==", true).get();
   return new Map(
     snaps.docs.map((d) => [d.id, { name: d.get("name") as string, department: (d.get("department") as string | undefined) ?? null, agreed: d.get("consent.status") === "AGREED" }]),
@@ -393,7 +408,7 @@ async function driversById(): Promise<Map<string, Driver>> {
 }
 
 /** Odometer end − start; the stored distance for an unrecorded drive; null when unknown or backwards. */
-function distanceOf(trip: DocumentSnapshot): number | null {
+export function distanceOf(trip: DocumentSnapshot): number | null {
   const start = num(trip.get("startOdometerKm"));
   const end = num(trip.get("endOdometerKm"));
   if (start !== null && end !== null && end >= start) return round1(end - start);

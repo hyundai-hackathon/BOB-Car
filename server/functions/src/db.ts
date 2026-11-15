@@ -14,6 +14,10 @@ export const COL = {
   receipts: "receipts",
   flags: "flags",
   transactions: "transactions",
+  /** Phone app sign-ins (anonymous uid) linked to the staff member who chose themself on first run. */
+  phoneUsers: "phoneUsers",
+  /** Audit trail of trip changes made on the phone: who, when, each field before and after. */
+  tripEdits: "tripEdits",
 } as const;
 
 function app(): App {

@@ -2,7 +2,7 @@ package com.bobcar.vehicle.upload
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.bobcar.vehicle.checkin.ConsentNotice
+import com.bobcar.shared.consent.ConsentNotice
 import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.data.DriverConsentDao
 import com.bobcar.vehicle.data.DriverConsentEntity

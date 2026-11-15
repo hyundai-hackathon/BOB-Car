@@ -414,6 +414,15 @@ table.logbook {
   color: var(--color-neutral-400);
 }
 
+/* Phone app changes: a second line under the name / destination */
+.logbook .phone-note,
+.logbook .memo {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-neutral-400);
+}
+
 .footnote {
   padding: 18px 10px 0;
   font-size: 13px;

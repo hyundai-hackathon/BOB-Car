@@ -1,5 +1,6 @@
 package com.bobcar.vehicle.checkin
 
+import com.bobcar.shared.consent.ConsentNotice
 import com.bobcar.vehicle.data.DriverConsentEntity
 import com.bobcar.vehicle.driving.DrivingState
 import com.bobcar.vehicle.signal.Gear

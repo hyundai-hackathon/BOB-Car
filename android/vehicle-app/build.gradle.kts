@@ -78,6 +78,8 @@ android {
 }
 
 dependencies {
+    // Server connection (HTTP, anonymous sign-in, server settings), shared with the phone app
+    implementation(project(":shared"))
     implementation(libs.pleos.vehicle.sdk)
     implementation(libs.pleos.navi.helper)
     // Voice guidance, on-device mode only (no server credentials in the app)

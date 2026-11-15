@@ -25,7 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.bobcar.vehicle.checkin.ConsentNotice
+import com.bobcar.shared.consent.ConsentNotice
 
 /**
  * Data collection consent, asked once per driver at their first check-in (design-review "수집 동의와 보안").
@@ -56,7 +56,7 @@ fun ConsentCard(driverName: String, onAgree: () -> Unit, onLater: () -> Unit) {
             BobSecondaryButton("나중에", onLater, minWidth = 284.dp)
         }
         Spacer(Modifier.height(30.dp))
-        Text(ConsentNotice.LATER_NOTE, style = BobType.Body)
+        Text(LATER_NOTE, style = BobType.Body)
     }
 }
 
@@ -106,3 +106,5 @@ private fun ConsentCardPreview() {
         ConsentCard("김민준", onAgree = {}, onLater = {})
     }
 }
+
+private const val LATER_NOTE = "나중에를 누르면 기록은 이 차에만 보관되고, 다음 탑승 때 다시 물어봐요"

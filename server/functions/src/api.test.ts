@@ -55,6 +55,12 @@ describe("authentication", () => {
     ["get", `/v1/flags?vehicleId=${VEHICLE}`],
     ["get", `/v1/transactions?vehicleId=${VEHICLE}`],
     ["post", "/v1/transactions"],
+    ["post", "/v1/phone/link"],
+    ["get", "/v1/phone/me"],
+    ["post", "/v1/phone/consent"],
+    ["get", "/v1/phone/trips"],
+    ["post", "/v1/phone/trips/x/correction"],
+    ["get", "/v1/phone/vehicle"],
   ];
 
   it.each(routes)("%s %s without a token is 401", async (method, path) => {

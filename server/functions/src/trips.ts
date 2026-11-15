@@ -65,6 +65,31 @@ export function parseTrip(payload: Record<string, unknown>): TripSnapshot | null
   };
 }
 
+/** What the driver set on the phone (phone.ts); kept on the trip and applied over later vehicle uploads. */
+export interface TripCorrection {
+  driverId: string | null;
+  driverProvisional: boolean;
+  purpose: string | null;
+  purposeProvisional: boolean;
+  memo: string | null;
+  byDriverId: string;
+  at: number;
+}
+
+/** The trip fields a correction sets. A personal trip keeps no destination (CLAUDE.md rule 6). */
+export function corrected(destinationName: string | null, c: TripCorrection) {
+  return {
+    driverId: c.driverId,
+    driverProvisional: c.driverProvisional,
+    purpose: c.purpose,
+    purposeProvisional: c.purposeProvisional,
+    memo: c.memo,
+    destinationName: c.purpose === "PERSONAL" ? null : destinationName,
+  };
+}
+
+export const TRIP_PURPOSES: readonly string[] = PURPOSES;
+
 /** What [writeTripSnapshot] needs to have read first (a transaction reads before it writes). */
 export interface TripReads {
   trip: DocumentSnapshot;
@@ -92,9 +117,12 @@ export function writeTripSnapshot(
   const storedQueueId = reads.trip.exists ? (reads.trip.get("lastQueueId") as number) : 0;
   if (storedQueueId > queueId) return false;
 
+  // A change made on the phone (phone.ts) stays over what the vehicle sends again
+  const correction = reads.trip.exists ? (reads.trip.get("correction") as TripCorrection | undefined) : undefined;
   tx.set(tripRef(vehicleId, snapshot.tripId), {
     vehicleId,
     ...snapshot,
+    ...(correction ? { ...corrected(snapshot.destinationName, correction), correction } : {}),
     closedByServer: false,
     lastQueueId: queueId,
     receivedAt: now,
