@@ -1,24 +1,53 @@
-// Demo helper for the local emulators (expense check ①): enter a mock card payment, cancel one, or list flags.
-// Signs in anonymously on the Auth emulator and sends UTF-8 JSON (avoids broken Korean text in shell curl).
+// Demo helper (expense check ①): enter a mock card payment, cancel one, or list flags.
+// Signs in anonymously and sends UTF-8 JSON (avoids broken Korean text in shell curl).
 //
 //   npm run demo:payment -- 12000            charge payment of 12,000 KRW now (veh-001)
 //   npm run demo:payment -- 62000 FUEL       refuel payment
 //   npm run demo:payment -- cancel <id>      cancel a payment
 //   npm run demo:payment -- flags            list the flags of veh-001 (payments, use outside the reservation, unrecorded drives)
 //
-// Emulators only (http://127.0.0.1). Override with BOBCAR_API / BOBCAR_AUTH / BOBCAR_VEHICLE.
-const API = process.env.BOBCAR_API ?? "http://127.0.0.1:5001/demo-bobcar/asia-northeast3/api/v1";
-const AUTH = process.env.BOBCAR_AUTH ?? "http://127.0.0.1:9099";
+// Local emulators by default. "npm run demo:payment:release -- ..." uses the deployed server set for release builds
+// in ~/.gradle/gradle.properties (bobcar.release.serverUrl / firebaseApiKey; the key is never printed).
+// Override with BOBCAR_API / BOBCAR_AUTH / BOBCAR_VEHICLE.
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const ARGS = process.argv.slice(2);
+const RELEASE = ARGS[0] === "--release";
+if (RELEASE) ARGS.shift();
+const release = RELEASE ? releaseSettings() : null;
+const API = process.env.BOBCAR_API ?? (release ? `${release.serverUrl}/api/v1` : "http://127.0.0.1:5001/demo-bobcar/asia-northeast3/api/v1");
+const AUTH = process.env.BOBCAR_AUTH ?? (release ? "https://identitytoolkit.googleapis.com" : "http://127.0.0.1:9099");
+const API_KEY = release ? release.apiKey : "emulator";
 const VEHICLE = process.env.BOBCAR_VEHICLE ?? "veh-001";
+
+/** bobcar.release.* from the user's Gradle properties (outside the repository). */
+function releaseSettings() {
+  const file = path.join(os.homedir(), ".gradle", "gradle.properties");
+  const props = {};
+  if (fs.existsSync(file)) {
+    for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+      const m = /^\s*([^#=\s]+)\s*=\s*(.*?)\s*$/.exec(line);
+      if (m) props[m[1]] = m[2];
+    }
+  }
+  const serverUrl = (props["bobcar.release.serverUrl"] ?? "").replace(/\/+$/, "");
+  const apiKey = props["bobcar.release.firebaseApiKey"] ?? "";
+  if (!serverUrl.startsWith("https://") || !apiKey) {
+    throw new Error(`set bobcar.release.serverUrl (https) and bobcar.release.firebaseApiKey in ${file}`);
+  }
+  return { serverUrl, apiKey };
+}
 const MERCHANT = { CHARGE: "충전소", FUEL: "주유소", TOLL: "고속도로", OTHER: "기타" };
 
 async function token() {
   const res = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signUp`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": "emulator" },
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": API_KEY },
     body: JSON.stringify({ returnSecureToken: true }),
   });
-  if (!res.ok) throw new Error(`sign-in failed: HTTP ${res.status} (are the emulators running?)`);
+  if (!res.ok) throw new Error(`sign-in failed: HTTP ${res.status} (${RELEASE ? "check the API key and anonymous sign-in" : "are the emulators running?"})`);
   return (await res.json()).idToken;
 }
 
@@ -47,7 +76,7 @@ function describeFlag(flag) {
 }
 
 async function main() {
-  const [first, second] = process.argv.slice(2);
+  const [first, second] = ARGS;
   if (first === "flags") {
     const { items } = await call("GET", `/flags?vehicleId=${VEHICLE}`);
     if (items.length === 0) console.log("플래그 없음");
