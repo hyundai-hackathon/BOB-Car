@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BOB-Car 관리자</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <span class="brand"><span class="icon icon-car-profile" aria-hidden="true"></span>BOB-Car 관리자</span>
+      <nav class="tabs">
+        <a class="tab" href="#flags" data-tab="flags">플래그<span class="tag tag-accent" id="flag-count" hidden></span></a>
+        <a class="tab" href="#logbook" data-tab="logbook">운행기록부</a>
+      </nav>
+      <span class="vehicle" id="vehicle"></span>
+      <span class="server-status" id="server-status"><span class="dot"></span><span id="server-status-text">연결 확인 중</span></span>
+    </header>
+    <main id="view" aria-live="polite"></main>
+  </body>
+</html>
