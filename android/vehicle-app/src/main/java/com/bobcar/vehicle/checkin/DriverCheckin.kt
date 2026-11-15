@@ -21,6 +21,19 @@ data class CheckinState(
     val driverId: String? get() = confirmedDriverId ?: default?.driverId
 
     val provisional: Boolean get() = confirmedDriverId == null
+
+    /**
+     * While the driver card waits for an answer (not confirmed, not closed): records of this stay are held
+     * back from the server from this wall-clock time, so they never go out under the default driver before
+     * the real one is chosen. null once the driver is confirmed or the card has closed (provisional).
+     */
+    val uploadHoldSince: Long?
+        get() = if (confirmedDriverId == null && !closed) boardedAt - HOLD_MARGIN_MS else null
+
+    companion object {
+        /** Records of the stay are stored slightly before the boarding time is read (same as the queue reassignment). */
+        const val HOLD_MARGIN_MS = 1_000L
+    }
 }
 
 /**

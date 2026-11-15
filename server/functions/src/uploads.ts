@@ -2,6 +2,7 @@ import * as logger from "firebase-functions/logger";
 import { MAX_ITEMS_PER_UPLOAD } from "./config";
 import { COL, db } from "./db";
 import { chargeOf, EVENT_CHARGE, onChargeFound } from "./reconcile";
+import { EVENT_DRIVER_CONFIRMED, EVENT_UNRECORDED, onDriverConfirmed, onTripChanged, onUnrecordedDrive } from "./usage";
 import { KIND_TRIP, parseTrip, readForTrip, type TripSnapshot, writeTripSnapshot } from "./trips";
 
 /*
@@ -67,7 +68,8 @@ export async function processUpload(body: unknown, now: number): Promise<UploadR
   items.sort((a, b) => Number(b.kind === KIND_CONSENT) - Number(a.kind === KIND_CONSENT) || a.queueId - b.queueId);
 
   const drivers = await loadDrivers(items);
-  const chargesFound: string[] = [];
+  // What new items trigger after the batch is stored (expense checks), in queue order
+  const followUps: Array<{ type: string; eventId?: string; tripId?: number }> = [];
   for (const item of items) {
     const driverId = item.driverId;
     if (!driverId) {
@@ -94,19 +96,35 @@ export async function processUpload(body: unknown, now: number): Promise<UploadR
     }
     const applied = await applyOnce(vehicleId, item, trip, now);
     (applied ? result.stored : result.duplicates).push(item.queueId);
-    if (applied && item.kind === KIND_VEHICLE_EVENT && item.payload.type === EVENT_CHARGE) {
-      chargesFound.push(`${vehicleId}_${item.queueId}`);
+    if (applied && item.kind === KIND_VEHICLE_EVENT) {
+      const type = item.payload.type;
+      if (type === EVENT_CHARGE || type === EVENT_DRIVER_CONFIRMED || type === EVENT_UNRECORDED) {
+        followUps.push({ type, eventId: `${vehicleId}_${item.queueId}` });
+      }
     }
+    if (applied && trip) followUps.push({ type: KIND_TRIP, tripId: trip.tripId });
     if (item.kind === KIND_CONSENT) driver.agreed = true;
   }
 
   if (result.stored.length + result.duplicates.length > 0) {
     await vehicleRef.set({ lastUploadAt: now }, { merge: true });
   }
-  // Card payments around a charge the vehicle found are checked again (expense check ①)
-  for (const eventId of chargesFound) {
-    const charge = await chargeOf(await firestore.collection(COL.events).doc(eventId).get());
-    if (charge) await onChargeFound(charge);
+  for (const next of followUps.sort((a, b) => order(a.type) - order(b.type))) {
+    if (next.type === KIND_TRIP) {
+      // ③ the trip's driver against the reservation
+      await onTripChanged(vehicleId, next.tripId!);
+      continue;
+    }
+    const event = await firestore.collection(COL.events).doc(next.eventId!).get();
+    if (next.type === EVENT_CHARGE) {
+      // ① card payments around the charge are checked again
+      const charge = await chargeOf(event);
+      if (charge) await onChargeFound(charge);
+    } else if (next.type === EVENT_DRIVER_CONFIRMED) {
+      await onDriverConfirmed(event); // ③ right when the driver is chosen
+    } else if (next.type === EVENT_UNRECORDED) {
+      await onUnrecordedDrive(event); // ②
+    }
   }
   // App-made IDs and counts only (no names, destinations or details)
   logger.info("upload", {
@@ -195,4 +213,9 @@ export function str(value: unknown): string | null {
 
 export function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** Follow-ups in a stable order: confirmations and trips first (driver), then findings. */
+function order(type: string): number {
+  return [EVENT_DRIVER_CONFIRMED, KIND_TRIP, EVENT_UNRECORDED, EVENT_CHARGE].indexOf(type);
 }

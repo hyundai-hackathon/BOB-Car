@@ -24,6 +24,11 @@ class Uploader(
     private val now: () -> Long = System::currentTimeMillis,
     /** Queues the consent records of these drivers again (they agreed on this device). */
     private val resendConsent: suspend (Set<String>) -> Unit = {},
+    /**
+     * While the driver card is open: wall-clock time from which records wait (they would otherwise go out
+     * as the default driver's before the real driver is chosen). null = nothing waits.
+     */
+    private val holdSince: () -> Long? = { null },
 ) {
 
     sealed interface Outcome {
@@ -48,7 +53,7 @@ class Uploader(
         val agreed = consents.getAll().filter { it.isAgreed() }.map { it.driverId }
         if (agreed.isEmpty()) return Outcome.Done(0)
         while (true) {
-            val batch = dao.getSendable(batchSize, MAX_ATTEMPTS, agreed)
+            val batch = dao.getSendable(batchSize, MAX_ATTEMPTS, agreed, holdSince() ?: Long.MAX_VALUE)
             if (batch.isEmpty()) return Outcome.Done(sent)
             val ids = batch.map { it.id }
             when (val result = sender.send(batch)) {

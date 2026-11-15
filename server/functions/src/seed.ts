@@ -61,11 +61,16 @@ export async function seed(now: number): Promise<void> {
   await batch.commit();
 }
 
-let seeded = false;
+/** Korea-time day already seeded by this process (start of that day, epoch ms). */
+let seededDay: number | null = null;
 
-/** Emulator only: seeds once per process, so a fresh emulator works without a separate step. */
+/**
+ * Emulator only: seeds on the first call of each Korea-time day, so a fresh emulator works without a separate
+ * step and an emulator left running past midnight still has today's reservation.
+ */
 export async function ensureSeeded(now: number): Promise<void> {
-  if (seeded) return;
+  const day = koreaDay(now).startAt;
+  if (seededDay === day) return;
   await seed(now);
-  seeded = true;
+  seededDay = day;
 }
