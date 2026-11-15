@@ -1,5 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import * as logger from "firebase-functions/logger";
+import { attentionView, koreaMonth, logbookView, logbookWorkbook } from "./admin";
 import { requireIdToken } from "./auth";
 import { COL, db } from "./db";
 import { cancelPayment, checkPayment, recheckOpenFlags } from "./reconcile";
@@ -130,6 +131,48 @@ export function createApp(options: AppOptions): express.Express {
       return;
     }
     res.json({ transactionId: req.params.transactionId, canceled: true, flag });
+  });
+
+  // ---------------------------------------------------------------- admin web (read only)
+
+  /** A1: open flags with names and trips, and drivers whose consent is pending. */
+  v1.get("/admin/attention", async (req, res) => {
+    const vehicleId = requiredQuery(req, res, "vehicleId");
+    if (!vehicleId) return;
+    const view = await attentionView(vehicleId, Date.now());
+    if (!view) {
+      res.status(404).json({ error: "vehicle not found" });
+      return;
+    }
+    res.json(view);
+  });
+
+  /** A2: the month's logbook (?month=YYYY-MM, Korea time; default this month). */
+  v1.get("/admin/logbook", async (req, res) => {
+    const vehicleId = requiredQuery(req, res, "vehicleId");
+    if (!vehicleId) return;
+    const view = await logbookView(vehicleId, typeof req.query.month === "string" ? req.query.month : koreaMonth(Date.now()));
+    if (!view) {
+      res.status(404).json({ error: "vehicle or month not found" });
+      return;
+    }
+    res.json(view);
+  });
+
+  /** A2: the same month as the 국세청 업무용승용차 운행기록부 workbook. */
+  v1.get("/admin/logbook.xlsx", async (req, res) => {
+    const vehicleId = requiredQuery(req, res, "vehicleId");
+    if (!vehicleId) return;
+    const view = await logbookView(vehicleId, typeof req.query.month === "string" ? req.query.month : koreaMonth(Date.now()));
+    if (!view) {
+      res.status(404).json({ error: "vehicle or month not found" });
+      return;
+    }
+    const file = await logbookWorkbook(view);
+    const name = `운행기록부_${view.vehicle.plate ?? vehicleId}_${view.month}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="logbook-${view.month}.xlsx"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    res.send(file);
   });
 
   if (options.dev) {

@@ -10,14 +10,21 @@ export const SEED_VEHICLE_ID = "veh-001";
 /** The emulator car's battery (INFO_EV_BATTERY_CAPACITY 77.4 kWh), used when a charge comes without kWh. */
 export const SEED_BATTERY_CAPACITY_WH = 77_400;
 
-export const SEED_DRIVERS: ReadonlyArray<{ id: string; name: string }> = [
-  { id: "drv-001", name: "김민준" },
-  { id: "drv-002", name: "이서연" },
-  { id: "drv-003", name: "박지호" },
-  { id: "drv-004", name: "최유나" },
-  { id: "drv-005", name: "정현우" },
-  { id: "drv-006", name: "한소희" },
+/** Made-up staff (blind review: no real names or companies). Departments are made up too (logbook form). */
+export const SEED_DRIVERS: ReadonlyArray<{ id: string; name: string; department: string }> = [
+  { id: "drv-001", name: "김민준", department: "영업팀" },
+  { id: "drv-002", name: "이서연", department: "영업팀" },
+  { id: "drv-003", name: "박지호", department: "개발팀" },
+  { id: "drv-004", name: "최유나", department: "총무팀" },
+  { id: "drv-005", name: "정현우", department: "개발팀" },
+  { id: "drv-006", name: "한소희", department: "총무팀" },
 ];
+
+/** The seed vehicle as the logbook form shows it (made-up registration number). */
+export const SEED_VEHICLE = { name: "업무차 1호", model: "아이오닉 5", plate: "12가 3456" } as const;
+
+/** Company line of the logbook form (made up: blind review). */
+export const SEED_COMPANY = { name: "법카 시연 법인", registrationNumber: "000-00-00000" } as const;
 
 /** Today's reservation of the seed vehicle (whole day, Korea time), like the vehicle app's mock. */
 export const SEED_RESERVED_DRIVER_ID = "drv-001";
@@ -40,13 +47,13 @@ export async function seed(now: number): Promise<void> {
   const batch = firestore.batch();
   batch.set(
     firestore.collection(COL.vehicles).doc(SEED_VEHICLE_ID),
-    { vehicleId: SEED_VEHICLE_ID, name: "업무차 1호", energy: "EV", batteryCapacityWh: SEED_BATTERY_CAPACITY_WH },
+    { vehicleId: SEED_VEHICLE_ID, ...SEED_VEHICLE, energy: "EV", batteryCapacityWh: SEED_BATTERY_CAPACITY_WH },
     { merge: true },
   );
   for (const driver of SEED_DRIVERS) {
     batch.set(
       firestore.collection(COL.drivers).doc(driver.id),
-      { driverId: driver.id, name: driver.name, active: true },
+      { driverId: driver.id, name: driver.name, department: driver.department, active: true },
       { merge: true },
     );
   }
