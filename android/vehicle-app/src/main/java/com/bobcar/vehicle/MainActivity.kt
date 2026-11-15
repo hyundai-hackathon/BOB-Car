@@ -22,6 +22,7 @@ import com.bobcar.vehicle.checkin.showsConsentCard
 import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.data.LocalMockData
 import com.bobcar.vehicle.driving.DrivingState
+import com.bobcar.vehicle.signal.Gear
 import com.bobcar.vehicle.service.CollectionService
 import com.bobcar.vehicle.service.VehicleRuntime
 import com.bobcar.vehicle.ui.ConsentCard
@@ -68,7 +69,7 @@ class MainActivity : ComponentActivity() {
             val storedEventCount by storedEventCountFlow.collectAsState(initial = 0)
             val pendingUploadCount by pendingUploadCountFlow.collectAsState(initial = 0)
             val sendableUploadCount by sendableUploadCountFlow.collectAsState(initial = 0)
-            // Long-press anywhere on the idle screen opens the diagnostic screen (V9) and back
+            // Long-press anywhere on the idle screen (in P) opens the diagnostic screen (V9) and back
             var diagnostic by rememberSaveable { mutableStateOf(false) }
             val upload by UploadStatus.state.collectAsState()
             val activeTrip by activeTripFlow.collectAsState(initial = null)
@@ -110,7 +111,13 @@ class MainActivity : ComponentActivity() {
                     val briefing = Briefing.of(snapshot.socPercent, snapshot.odometerKm, baseline?.lastOdometerKm)
                     DriverCard(currentCheckin, drivers, briefing, onConfirm = VehicleRuntime::confirmDriver)
                 } else {
-                    Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures(onLongPress = { diagnostic = !diagnostic }) }) {
+                    // Input only in P (CLAUDE.md rule 3; the app is declared usable while driving)
+                    val longPress = if (snapshot.gear == Gear.PARK) {
+                        Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { diagnostic = !diagnostic }) }
+                    } else {
+                        Modifier
+                    }
+                    Box(Modifier.fillMaxSize().then(longPress)) {
                         if (diagnostic) {
                             DiagnosticScreen(
                                 snapshot, state, recentEvents, fakeMode, storedEventCount, pendingUploadCount, upload, lastTrip,
