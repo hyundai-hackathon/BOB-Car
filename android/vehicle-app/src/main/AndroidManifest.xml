@@ -56,6 +56,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Usable while driving (AAOS driver distraction guidelines, which Pleos refers to): in D/R the app shows
+                 display-only screens (trip screen); cards that take input appear in P only (CLAUDE.md rule 3). -->
+            <meta-data
+                android:name="distractionOptimized"
+                android:value="true" />
         </activity>
 
         <service

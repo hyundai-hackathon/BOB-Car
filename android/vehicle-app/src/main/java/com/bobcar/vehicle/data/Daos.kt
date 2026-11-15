@@ -201,6 +201,16 @@ interface UploadQueueDao {
     @Query("SELECT COUNT(*) FROM upload_queue WHERE sentAt IS NULL")
     fun pendingCountFlow(): Flow<Int>
 
+    /**
+     * Unsent records that may still go to the server: drivers who agreed to notice [noticeVersion] or later,
+     * not refused [maxAttempts] times (same rule as [getSendable]). The idle screen's "전송 대기" count.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM upload_queue WHERE sentAt IS NULL AND attempts < :maxAttempts AND driverId IN " +
+            "(SELECT driverId FROM driver_consent WHERE status = 'AGREED' AND noticeVersion >= :noticeVersion)",
+    )
+    fun sendableCountFlow(maxAttempts: Int, noticeVersion: Int): Flow<Int>
+
     /** Sent rows are kept for a while for checking, then removed. */
     @Query("DELETE FROM upload_queue WHERE sentAt IS NOT NULL AND sentAt < :before")
     suspend fun deleteSentBefore(before: Long): Int

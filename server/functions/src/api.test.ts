@@ -178,6 +178,15 @@ describe("lookups", () => {
     expect(res.body.items[0].endAt).toBeGreaterThan(now);
   });
 
+  it("the deployed server seeds on its first call but keeps the dev routes closed", async () => {
+    await db().collection(COL.vehicles).doc(VEHICLE).delete();
+    const deployed = createApp({ dev: false, seed: true });
+    const call = (r: request.Test) => r.set("Authorization", `Bearer ${token}`);
+
+    expect((await call(request(deployed).get(`/v1/vehicles/${VEHICLE}`))).status).toBe(200);
+    expect((await call(request(deployed).post("/v1/dev/auto-close").send({}))).status).toBe(404);
+  });
+
   it("returns the vehicle, and 404 for an unknown one", async () => {
     expect((await get(`/v1/vehicles/${VEHICLE}`)).body.vehicleId).toBe(VEHICLE);
     expect((await get("/v1/vehicles/veh-999")).status).toBe(404);

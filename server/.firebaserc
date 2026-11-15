@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "demo-bobcar"
+    "default": "demo-bobcar",
+    "release": "bob-car-a4847"
   }
 }

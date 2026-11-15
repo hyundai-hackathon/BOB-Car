@@ -24,8 +24,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release signing: the same team key as the vehicle app, from ~/.gradle/gradle.properties (bobcar.release.storeFile /
+    // storePassword / keyAlias / keyPassword). Never in the repository (CLAUDE.md rule 7). Without them: unsigned.
+    val releaseStoreFile = prop("bobcar.release.storeFile")
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = prop("bobcar.release.storePassword")
+                keyAlias = prop("bobcar.release.keyAlias")
+                keyPassword = prop("bobcar.release.keyPassword")
+            }
+        }
+    }
+
     buildTypes {
-        // Same server as the vehicle app (CLAUDE.md rule 6-1). Override with -Pbobcar.serverUrl / authUrl / firebaseApiKey.
+        // Same server as the vehicle app (CLAUDE.md rule 6-1). Debug: -Pbobcar.serverUrl / authUrl / firebaseApiKey.
+        // Release: -Pbobcar.release.serverUrl / authUrl / firebaseApiKey (never changes debug builds).
         debug {
             // The PC's Firebase emulators as seen from the Android emulator (server/: npm run emulators)
             buildConfigField("String", "SERVER_URL", configString(prop("bobcar.serverUrl") ?: "http://10.0.2.2:5001/demo-bobcar/asia-northeast3"))
@@ -33,10 +48,11 @@ android {
             buildConfigField("String", "FIREBASE_API_KEY", configString(prop("bobcar.firebaseApiKey") ?: "emulator"))
         }
         release {
-            // No server until a real HTTPS server exists
-            buildConfigField("String", "SERVER_URL", configString(prop("bobcar.serverUrl") ?: ""))
-            buildConfigField("String", "AUTH_URL", configString(prop("bobcar.authUrl") ?: ""))
-            buildConfigField("String", "FIREBASE_API_KEY", configString(prop("bobcar.firebaseApiKey") ?: ""))
+            // The real HTTPS server when bobcar.release.* is set; without it the app shows it cannot connect
+            buildConfigField("String", "SERVER_URL", configString(prop("bobcar.release.serverUrl") ?: ""))
+            buildConfigField("String", "AUTH_URL", configString(prop("bobcar.release.authUrl") ?: ""))
+            buildConfigField("String", "FIREBASE_API_KEY", configString(prop("bobcar.release.firebaseApiKey") ?: ""))
+            if (releaseStoreFile != null) signingConfig = signingConfigs.getByName("release")
             isDebuggable = false
             isMinifyEnabled = false
             proguardFiles(

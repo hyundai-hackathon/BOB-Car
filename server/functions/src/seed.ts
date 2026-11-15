@@ -1,7 +1,8 @@
 import { COL, db } from "./db";
 
 /**
- * Seed data for the emulator and tests (reservations, vehicles and staff are seed data; no input screens).
+ * Seed data for the emulator, tests and the deployed demo server (reservations, vehicles and staff are seed
+ * data; no input screens).
  * Same IDs and made-up names as the vehicle app's local mock (LocalMockData), so both sides agree
  * until the vehicle app reads them from the server.
  */
@@ -72,8 +73,8 @@ export async function seed(now: number): Promise<void> {
 let seededDay: number | null = null;
 
 /**
- * Emulator only: seeds on the first call of each Korea-time day, so a fresh emulator works without a separate
- * step and an emulator left running past midnight still has today's reservation.
+ * Seeds on the first call of each Korea-time day (per server instance), so a fresh emulator or a new deployment
+ * works without a separate step and a server left running past midnight still has today's reservation.
  */
 export async function ensureSeeded(now: number): Promise<void> {
   const day = koreaDay(now).startAt;

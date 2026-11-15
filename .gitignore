@@ -60,6 +60,8 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 emulator-data/
+# Copy of admin-web/ made before a deploy or emulator start (server/functions/scripts/copy-admin-web.js)
+server/hosting/
 
 # OS files
 Thumbs.db

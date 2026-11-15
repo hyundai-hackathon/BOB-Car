@@ -23,7 +23,10 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
-    "public": "../admin-web",
+    "public": "hosting",
+    "predeploy": [
+      "node \"$PROJECT_DIR/functions/scripts/copy-admin-web.js\""
+    ],
     "ignore": [
       "**/.*"
     ],
