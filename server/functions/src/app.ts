@@ -149,6 +149,8 @@ export function createApp(options: AppOptions): express.Express {
   }
 
   app.use("/v1", v1);
+  // Same routes behind Firebase Hosting (admin web): "/api/**" is rewritten to this function with the path kept
+  app.use("/api/v1", v1);
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "not found" });
   });
