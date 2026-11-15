@@ -7,21 +7,34 @@ const VEHICLE_ID = "veh-001";
 const API = "/api/v1";
 const REFRESH_MS = 15_000;
 
-// Local emulators only for now (the Auth emulator accepts any API key). A deployed admin web needs a real
-// Firebase project and its Web API key: see server/README notes (not part of this build).
+// Local: the Auth emulator (any API key works). Deployed on Firebase Hosting: Google's Auth with the project's Web
+// API key, read from Hosting's reserved /__/firebase/init.json (so no key is kept in this repository).
 const LOCAL = ["127.0.0.1", "localhost"].includes(location.hostname);
-const AUTH_BASE = LOCAL ? `http://${location.hostname}:9099` : null;
-const AUTH_KEY = "emulator";
+const AUTH_BASE = LOCAL ? `http://${location.hostname}:9099` : "https://identitytoolkit.googleapis.com";
+const INIT_JSON = "/__/firebase/init.json";
 
 // ---------------------------------------------------------------- sign-in and API
 
 let idToken = null;
+let authKey = LOCAL ? "emulator" : null;
+
+/** The project's Web API key from Firebase Hosting (deployed only). */
+async function loadAuthKey() {
+  try {
+    const res = await fetch(INIT_JSON);
+    authKey = res.ok ? (await res.json()).apiKey ?? null : null;
+  } catch {
+    authKey = null;
+  }
+  if (!authKey) throw new ApiError("NO_AUTH", "로그인 설정 없음", `GET ${INIT_JSON}`);
+}
 
 async function signIn() {
-  if (!AUTH_BASE) throw new ApiError("NO_AUTH", "로그인 설정 없음", "");
-  const res = await fetch(`${AUTH_BASE}/identitytoolkit.googleapis.com/v1/accounts:signUp`, {
+  if (!authKey) await loadAuthKey();
+  const path = LOCAL ? "/identitytoolkit.googleapis.com/v1/accounts:signUp" : "/v1/accounts:signUp";
+  const res = await fetch(AUTH_BASE + path, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": AUTH_KEY },
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": authKey },
     body: JSON.stringify({ returnSecureToken: true }),
   });
   if (!res.ok) throw new ApiError(`HTTP ${res.status}`, "로그인 실패", "POST /identitytoolkit.googleapis.com/v1/accounts:signUp");
