@@ -3,6 +3,7 @@ import * as logger from "firebase-functions/logger";
 import { attentionView, koreaMonth, logbookView, logbookWorkbook } from "./admin";
 import { requireIdToken } from "./auth";
 import { COL, db } from "./db";
+import { agreeOnPhone, correctTrip, linkPhone, myTrips, PhoneError, phoneDriver, vehicleStatus } from "./phone";
 import { cancelPayment, checkPayment, recheckOpenFlags } from "./reconcile";
 import { ensureSeeded } from "./seed";
 import { closeStaleTrips } from "./trips";
@@ -59,6 +60,7 @@ export function createApp(options: AppOptions): express.Express {
       items: snaps.docs.map((d) => ({
         driverId: d.id,
         name: d.get("name"),
+        department: d.get("department") ?? null,
         consentStatus: d.get("consent.status") ?? "PENDING",
         consentAgreedAt: d.get("consent.agreedAt") ?? null,
       })),
@@ -175,6 +177,39 @@ export function createApp(options: AppOptions): express.Express {
     res.send(file);
   });
 
+  // ---------------------------------------------------------------- phone app (acts as the linked driver)
+
+  /** First run: the driver picks themself ({driverId}); this sign-in then acts as that driver. */
+  v1.post("/phone/link", phone(async (req, res) => {
+    res.json(await linkPhone(uidOf(res), req.body, Date.now()));
+  }));
+
+  /** Who this phone is, and whether they agreed to collection. 404 until linked. */
+  v1.get("/phone/me", phone(async (_req, res) => {
+    res.json(await phoneDriver(uidOf(res)));
+  }));
+
+  /** Collection consent given on the phone ({noticeVersion}). */
+  v1.post("/phone/consent", phone(async (req, res) => {
+    res.json(await agreeOnPhone(uidOf(res), req.body, Date.now()));
+  }));
+
+  /** M1/M2: my trips and the unrecorded drives I may have driven, newest first. */
+  v1.get("/phone/trips", phone(async (_req, res) => {
+    res.json(await myTrips(uidOf(res)));
+  }));
+
+  /** M2/M3: change one trip ({driverId?, purpose?, memo?, confirm?}). POST: HttpURLConnection has no PATCH. */
+  v1.post("/phone/trips/:tripDocId/correction", phone(async (req, res) => {
+    res.json(await correctTrip(uidOf(res), String(req.params.tripDocId), req.body, Date.now()));
+  }));
+
+  /** M4: the car's state (?vehicleId=, default the car of my latest trip). */
+  v1.get("/phone/vehicle", phone(async (req, res) => {
+    const vehicleId = typeof req.query.vehicleId === "string" && req.query.vehicleId.length > 0 ? req.query.vehicleId : null;
+    res.json(await vehicleStatus(uidOf(res), vehicleId, Date.now()));
+  }));
+
   if (options.dev) {
     /** Runs the daily check of open flags now (the emulator does not run scheduled functions). */
     v1.post("/dev/reconcile", async (_req, res) => {
@@ -223,4 +258,21 @@ function requiredQuery(req: Request, res: Response, name: string): string | null
   if (typeof value === "string" && value.length > 0) return value;
   res.status(400).json({ error: `${name} is required` });
   return null;
+}
+
+/** The anonymous sign-in of this request (set by requireIdToken). */
+function uidOf(res: Response): string {
+  return res.locals.uid as string;
+}
+
+/** A phone route: PhoneError becomes its status and message; anything else goes to the error handler. */
+function phone(handler: (req: Request, res: Response) => Promise<void>) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await handler(req, res);
+    } catch (e) {
+      if (e instanceof PhoneError) res.status(e.status).json({ error: e.message });
+      else next(e);
+    }
+  };
 }
