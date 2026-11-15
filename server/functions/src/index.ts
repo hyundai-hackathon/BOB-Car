@@ -9,7 +9,7 @@ import { closeStaleTrips } from "./trips";
 setGlobalOptions({ region: REGION, maxInstances: 5 });
 
 /** HTTP API: <region base URL>/api/v1/... (see app.ts). */
-export const api = onRequest(createApp({ dev: isEmulator() }));
+export const api = onRequest(createApp({ dev: isEmulator(), seed: true }));
 
 /** Closes running trips whose vehicle has gone quiet (see trips.ts closeStaleTrips). */
 export const autoCloseTrips = onSchedule({ schedule: AUTO_CLOSE_SCHEDULE, timeZone: "Asia/Seoul" }, async () => {

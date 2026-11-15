@@ -10,8 +10,13 @@ import { closeStaleTrips } from "./trips";
 import { isObject, processUpload, UploadError } from "./uploads";
 
 export interface AppOptions {
-  /** Emulator and tests only: seed data on the first call, and dev routes (/v1/dev/...). */
+  /** Emulator and tests only: dev routes (/v1/dev/...). */
   dev: boolean;
+  /**
+   * Seed data (vehicle, staff, today's reservation) on the first call of each Korea-time day.
+   * Default: same as [dev]. The deployed demo server seeds too: it has no input screens for these.
+   */
+  seed?: boolean;
 }
 
 const TRANSACTION_CATEGORIES = ["CHARGE", "FUEL", "TOLL", "OTHER"];
@@ -25,7 +30,7 @@ export function createApp(options: AppOptions): express.Express {
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
   app.use(requireIdToken);
-  if (options.dev) {
+  if (options.seed ?? options.dev) {
     app.use(async (_req: Request, _res: Response, next: NextFunction) => {
       await ensureSeeded(Date.now());
       next();
