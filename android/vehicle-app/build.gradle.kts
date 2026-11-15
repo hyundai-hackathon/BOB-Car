@@ -35,6 +35,21 @@ android {
         buildConfigField("String", "VEHICLE_SDK_VERSION", "\"${libs.versions.vehicleSdk.get()}\"")
     }
 
+    // Release signing from ~/.gradle/gradle.properties (bobcar.release.storeFile / storePassword / keyAlias /
+    // keyPassword). The keystore and its passwords never enter the repository (CLAUDE.md rule 7).
+    // Without them the release APK is built unsigned.
+    val releaseStoreFile = prop("bobcar.release.storeFile")
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = prop("bobcar.release.storePassword")
+                keyAlias = prop("bobcar.release.keyAlias")
+                keyPassword = prop("bobcar.release.keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         // Server settings (CLAUDE.md rule 6-1). Debug: -Pbobcar.serverUrl / authUrl / firebaseApiKey.
         // Release: -Pbobcar.release.serverUrl / authUrl / firebaseApiKey, so a real server set for release never
@@ -53,6 +68,7 @@ android {
             buildConfigField("String", "SERVER_URL", configString(prop("bobcar.release.serverUrl") ?: ""))
             buildConfigField("String", "AUTH_URL", configString(prop("bobcar.release.authUrl") ?: ""))
             buildConfigField("String", "FIREBASE_API_KEY", configString(prop("bobcar.release.firebaseApiKey") ?: ""))
+            if (releaseStoreFile != null) signingConfig = signingConfigs.getByName("release")
             isDebuggable = false
             isMinifyEnabled = false
             proguardFiles(
