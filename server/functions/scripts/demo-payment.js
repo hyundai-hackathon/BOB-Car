@@ -18,7 +18,9 @@ const RELEASE = ARGS[0] === "--release";
 if (RELEASE) ARGS.shift();
 const release = RELEASE ? releaseSettings() : null;
 const API = process.env.BOBCAR_API ?? (release ? `${release.serverUrl}/api/v1` : "http://127.0.0.1:5001/demo-bobcar/asia-northeast3/api/v1");
-const AUTH = process.env.BOBCAR_AUTH ?? (release ? "https://identitytoolkit.googleapis.com" : "http://127.0.0.1:9099");
+// Auth emulator base; empty = Google's real Auth (the emulator serves each Google host as the first path part).
+const AUTH = process.env.BOBCAR_AUTH ?? (release ? "" : "http://127.0.0.1:9099");
+const SIGN_UP_URL = `${AUTH || "https:/"}/identitytoolkit.googleapis.com/v1/accounts:signUp`;
 const API_KEY = release ? release.apiKey : "emulator";
 const VEHICLE = process.env.BOBCAR_VEHICLE ?? "veh-001";
 
@@ -42,7 +44,7 @@ function releaseSettings() {
 const MERCHANT = { CHARGE: "충전소", FUEL: "주유소", TOLL: "고속도로", OTHER: "기타" };
 
 async function token() {
-  const res = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signUp`, {
+  const res = await fetch(SIGN_UP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": API_KEY },
     body: JSON.stringify({ returnSecureToken: true }),
