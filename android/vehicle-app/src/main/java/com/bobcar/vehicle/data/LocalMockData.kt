@@ -17,6 +17,9 @@ object LocalMockData {
         DriverEntity(id = "drv-006", name = "한소희"),
     )
 
+    /** This vehicle as the idle screen shows it: the same made-up model and plate as the server seed. */
+    const val VEHICLE_LABEL = "아이오닉 5 · 12가 3456"
+
     /** Holds today's reservation of this vehicle in the mock. */
     const val RESERVED_DRIVER_ID = "drv-001"
 

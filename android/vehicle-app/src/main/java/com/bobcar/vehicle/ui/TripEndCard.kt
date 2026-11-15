@@ -234,7 +234,7 @@ private val BuildingIcon: ImageVector by lazy {
     }
 }
 
-private fun outlineIcon(name: String, block: androidx.compose.ui.graphics.vector.PathBuilder.() -> Unit): ImageVector =
+internal fun outlineIcon(name: String, block: androidx.compose.ui.graphics.vector.PathBuilder.() -> Unit): ImageVector =
     ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         .path(
             stroke = SolidColor(Color.Black),
