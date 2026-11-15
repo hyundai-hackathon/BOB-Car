@@ -1,10 +1,10 @@
-package com.bobcar.vehicle.upload
+package com.bobcar.shared.server
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class UploadPolicyTest {
+class ServerConfigTest {
 
     @Test
     fun releaseSendsOnlyOverHttps() {

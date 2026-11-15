@@ -1,4 +1,4 @@
-package com.bobcar.vehicle.server
+package com.bobcar.shared.server
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec

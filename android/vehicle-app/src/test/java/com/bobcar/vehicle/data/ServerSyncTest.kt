@@ -2,12 +2,13 @@ package com.bobcar.vehicle.data
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.bobcar.vehicle.server.HttpResponse
-import com.bobcar.vehicle.server.HttpTransport
-import com.bobcar.vehicle.server.IdTokenProvider
-import com.bobcar.vehicle.server.RefreshTokenStore
+import com.bobcar.shared.server.HttpResponse
+import com.bobcar.shared.server.HttpTransport
+import com.bobcar.shared.server.IdTokenProvider
+import com.bobcar.shared.server.RefreshTokenStore
 import com.bobcar.vehicle.server.ServerApi
-import com.bobcar.vehicle.server.ServerConfig
+import com.bobcar.shared.server.ServerConfig
+import com.bobcar.vehicle.server.VehicleServer
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -26,7 +27,7 @@ class ServerSyncTest {
     private val now = 1_800_000_000_000L
     private val day = LocalMockData.dayWindow(now)
 
-    private val config = ServerConfig("http://10.0.2.2:5001/demo-bobcar/asia-northeast3", "http://10.0.2.2:9099", "emulator", "veh-001", debug = true)
+    private val server = VehicleServer(ServerConfig("http://10.0.2.2:5001/demo-bobcar/asia-northeast3", "http://10.0.2.2:9099", "emulator", debug = true), "veh-001")
 
     /** Answers GETs by path; auth always gives a token. null answer = server unreachable. */
     private class FakeServer(private val answers: Map<String, String?>) : HttpTransport {
@@ -51,7 +52,7 @@ class ServerSyncTest {
         }
     }
 
-    private fun sync(server: FakeServer) = ServerSync(db, ServerApi(config, IdTokenProvider(config, MemoryStore(), server), server))
+    private fun sync(server: FakeServer) = ServerSync(db, ServerApi(this.server, IdTokenProvider(this.server.config, MemoryStore(), server), server))
 
     private val drivers = """{"items":[{"driverId":"drv-001","name":"김민준"},{"driverId":"drv-007","name":"윤도윤"}]}"""
     private val reservations = """{"items":[{"driverId":"drv-002","startAt":${day.first},"endAt":${day.second}}]}"""

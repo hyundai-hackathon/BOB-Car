@@ -1,5 +1,9 @@
 package com.bobcar.vehicle.server
 
+import com.bobcar.shared.server.HttpResponse
+import com.bobcar.shared.server.HttpTransport
+import com.bobcar.shared.server.IdTokenProvider
+import com.bobcar.shared.server.UrlConnectionTransport
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
@@ -10,7 +14,7 @@ import java.io.IOException
  * the app then keeps using its local values. Blocking; call off the main thread.
  */
 class ServerApi(
-    private val config: ServerConfig,
+    private val server: VehicleServer,
     private val tokens: IdTokenProvider,
     private val http: HttpTransport = UrlConnectionTransport,
 ) {
@@ -25,7 +29,7 @@ class ServerApi(
 
     data class Driver(val id: String, val name: String)
 
-    fun baseline(): Baseline? = get("/vehicles/${config.vehicleId}")?.let { json ->
+    fun baseline(): Baseline? = get("/vehicles/${server.vehicleId}")?.let { json ->
         Baseline(
             lastOdometerKm = json.optNumber("lastOdometerKm")?.toFloat(),
             lastSocPercent = json.optNumber("lastSocPercent")?.toInt(),
@@ -35,7 +39,7 @@ class ServerApi(
 
     /** Reservations of this vehicle overlapping [from, to). */
     fun reservations(from: Long, to: Long): List<Reservation>? =
-        get("/reservations?vehicleId=${config.vehicleId}&from=$from&to=$to")?.let { json ->
+        get("/reservations?vehicleId=${server.vehicleId}&from=$from&to=$to")?.let { json ->
             val items = json.optJSONArray("items") ?: return@let emptyList()
             (0 until items.length()).mapNotNull { i ->
                 val r = items.getJSONObject(i)
@@ -54,7 +58,7 @@ class ServerApi(
     }
 
     private fun get(path: String): JSONObject? {
-        if (!config.configured) return null
+        if (!server.configured) return null
         var response = request(path) { tokens.get() } ?: return null
         if (response.code == 401) response = request(path) { tokens.get(forceRefresh = true) } ?: return null
         if (response.code == 401) response = request(path) { tokens.signUpAgain() } ?: return null
@@ -69,7 +73,7 @@ class ServerApi(
     private fun request(path: String, token: () -> IdTokenProvider.Result): HttpResponse? {
         val idToken = (token() as? IdTokenProvider.Result.Token)?.idToken ?: return null
         return try {
-            http.send("GET", config.api(path), mapOf("Authorization" to "Bearer $idToken"), null)
+            http.send("GET", server.config.api(path), mapOf("Authorization" to "Bearer $idToken"), null)
         } catch (e: IOException) {
             null
         }

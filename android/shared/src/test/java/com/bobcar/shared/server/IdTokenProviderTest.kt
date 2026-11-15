@@ -1,4 +1,4 @@
-package com.bobcar.vehicle.server
+package com.bobcar.shared.server
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,7 +34,7 @@ class IdTokenProviderTest {
         }
     }
 
-    private val emulator = ServerConfig("http://10.0.2.2:5001/demo-bobcar/asia-northeast3", "http://10.0.2.2:9099", "emulator", "veh-001", debug = true)
+    private val emulator = ServerConfig("http://10.0.2.2:5001/demo-bobcar/asia-northeast3", "http://10.0.2.2:9099", "emulator", debug = true)
     private var clock = 1_000_000L
 
     private fun signUpOk(id: String = "id-1", refresh: String = "rt-1") =
@@ -140,7 +140,7 @@ class IdTokenProviderTest {
 
     @Test
     fun releaseUsesGoogleAuthOverHttps() {
-        val real = ServerConfig("https://asia-northeast3-example.cloudfunctions.net", "", "web-key", "veh-001", debug = false)
+        val real = ServerConfig("https://asia-northeast3-example.cloudfunctions.net", "", "web-key", debug = false)
 
         assertEquals("https://identitytoolkit.googleapis.com/v1/accounts:signUp", real.signUpUrl)
         assertEquals("https://securetoken.googleapis.com/v1/token", real.refreshUrl)
@@ -150,10 +150,10 @@ class IdTokenProviderTest {
 
     @Test
     fun releaseWithPlainHttpOrNoKeyIsNotConfigured() {
-        assertFalse(ServerConfig("http://10.0.2.2:5001/x", "", "k", "veh-001", debug = false).configured)
-        assertFalse(ServerConfig("https://example.com", "http://10.0.2.2:9099", "k", "veh-001", debug = false).configured)
-        assertFalse(ServerConfig("https://example.com", "", "", "veh-001", debug = false).configured)
-        assertFalse(ServerConfig("", "", "k", "veh-001", debug = true).configured)
+        assertFalse(ServerConfig("http://10.0.2.2:5001/x", "", "k", debug = false).configured)
+        assertFalse(ServerConfig("https://example.com", "http://10.0.2.2:9099", "k", debug = false).configured)
+        assertFalse(ServerConfig("https://example.com", "", "", debug = false).configured)
+        assertFalse(ServerConfig("", "", "k", debug = true).configured)
         assertTrue(emulator.configured)
         assertNull(MemoryStore().load())
     }

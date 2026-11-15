@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 rootProject.name = "BOB-Car"
 include(":mobile-app")
 include(":vehicle-app")
+include(":shared")

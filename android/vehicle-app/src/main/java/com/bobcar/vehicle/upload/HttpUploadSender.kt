@@ -1,10 +1,10 @@
 package com.bobcar.vehicle.upload
 
 import com.bobcar.vehicle.data.UploadQueueEntity
-import com.bobcar.vehicle.server.HttpTransport
-import com.bobcar.vehicle.server.IdTokenProvider
-import com.bobcar.vehicle.server.ServerConfig
-import com.bobcar.vehicle.server.UrlConnectionTransport
+import com.bobcar.shared.server.HttpTransport
+import com.bobcar.shared.server.IdTokenProvider
+import com.bobcar.shared.server.UrlConnectionTransport
+import com.bobcar.vehicle.server.VehicleServer
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -22,7 +22,7 @@ import java.io.IOException
  * knows the old one, e.g. emulator data wiped). Sign-in trouble is a Retry: items keep their attempts.
  */
 class HttpUploadSender(
-    private val config: ServerConfig,
+    private val server: VehicleServer,
     private val tokens: IdTokenProvider,
     private val http: HttpTransport = UrlConnectionTransport,
 ) : UploadSender {
@@ -51,7 +51,7 @@ class HttpUploadSender(
         val response = try {
             http.send(
                 "POST",
-                config.api(PATH),
+                server.config.api(PATH),
                 mapOf(
                     "Content-Type" to "application/json; charset=utf-8",
                     "Authorization" to "Bearer $idToken",
@@ -73,7 +73,7 @@ class HttpUploadSender(
 
     private fun body(items: List<UploadQueueEntity>): ByteArray =
         JSONObject()
-            .put("vehicleId", config.vehicleId)
+            .put("vehicleId", server.vehicleId)
             .put(
                 "items",
                 JSONArray().apply {

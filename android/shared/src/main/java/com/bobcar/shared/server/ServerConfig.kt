@@ -1,10 +1,7 @@
-package com.bobcar.vehicle.server
-
-import com.bobcar.vehicle.BuildConfig
-import com.bobcar.vehicle.upload.canSendTo
+package com.bobcar.shared.server
 
 /**
- * Where the server and Firebase Auth are, for this build (build.gradle.kts, -Pbobcar.*).
+ * Where the server and Firebase Auth are, for this build (each app's build.gradle.kts, -Pbobcar.*).
  * Debug defaults to the PC's Firebase emulators (10.0.2.2); release has no server until a real HTTPS one
  * is set. Release only ever talks HTTPS (CLAUDE.md rule 6-1).
  */
@@ -15,16 +12,13 @@ data class ServerConfig(
     val authUrl: String,
     /** Firebase Web API key, sent as the X-Goog-Api-Key header (never in a URL). */
     val apiKey: String,
-    /** This vehicle's app-made ID (no VIN). */
-    val vehicleId: String,
     val debug: Boolean,
 ) {
     /** A server is set and allowed for this build, and sign-in can work. */
     val configured: Boolean
         get() = canSendTo(serverUrl, debug) &&
             (authUrl.isEmpty() || canSendTo(authUrl, debug)) &&
-            apiKey.isNotEmpty() &&
-            vehicleId.isNotEmpty()
+            apiKey.isNotEmpty()
 
     fun api(path: String): String = serverUrl.trim().trimEnd('/') + "/api/v1" + path
 
@@ -37,18 +31,22 @@ data class ServerConfig(
     private fun auth(host: String, path: String): String =
         if (authUrl.isEmpty()) "https://$host$path" else authUrl.trim().trimEnd('/') + "/$host$path"
 
-    companion object {
-        private const val IDENTITY_HOST = "identitytoolkit.googleapis.com"
-        private const val SECURE_TOKEN_HOST = "securetoken.googleapis.com"
+    private companion object {
+        const val IDENTITY_HOST = "identitytoolkit.googleapis.com"
+        const val SECURE_TOKEN_HOST = "securetoken.googleapis.com"
+    }
+}
 
-        val current: ServerConfig by lazy {
-            ServerConfig(
-                serverUrl = BuildConfig.SERVER_URL.trim(),
-                authUrl = BuildConfig.AUTH_URL.trim(),
-                apiKey = BuildConfig.FIREBASE_API_KEY.trim(),
-                vehicleId = BuildConfig.VEHICLE_ID.trim(),
-                debug = BuildConfig.DEBUG,
-            )
-        }
+/**
+ * Whether data may be sent to [url] (CLAUDE.md rule 6-1).
+ * Release: HTTPS only. Debug: HTTP is also accepted here; network_security_config still allows plain HTTP
+ * only to the PC's local server (10.0.2.2). Empty = no server yet.
+ */
+fun canSendTo(url: String, debug: Boolean): Boolean {
+    val u = url.trim().lowercase()
+    return when {
+        u.startsWith("https://") -> u.length > "https://".length
+        u.startsWith("http://") -> debug && u.length > "http://".length
+        else -> false
     }
 }

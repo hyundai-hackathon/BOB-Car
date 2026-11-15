@@ -6,8 +6,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.bobcar.vehicle.data.BobCarDatabase
 import com.bobcar.vehicle.data.DrivingRecorder
-import com.bobcar.vehicle.server.ServerClients
-import com.bobcar.vehicle.server.ServerConfig
+import com.bobcar.shared.server.ServerClients
+import com.bobcar.vehicle.server.VehicleServer
 import com.bobcar.vehicle.service.VehicleRuntime
 
 /** Runs [Uploader] when the network is up. Logs counts and status only, never record contents. */
@@ -19,7 +19,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             return Result.success()
         }
         val db = BobCarDatabase.get(applicationContext)
-        val sender = HttpUploadSender(ServerConfig.current, ServerClients.tokens(applicationContext))
+        val sender = HttpUploadSender(VehicleServer.current, ServerClients.tokens(applicationContext, VehicleServer.current.config))
         val uploader = Uploader(
             db.uploadQueueDao(),
             db.driverConsentDao(),

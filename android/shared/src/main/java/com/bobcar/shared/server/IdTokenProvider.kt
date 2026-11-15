@@ -1,4 +1,4 @@
-package com.bobcar.vehicle.server
+package com.bobcar.shared.server
 
 import org.json.JSONException
 import org.json.JSONObject
