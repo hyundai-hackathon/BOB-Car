@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
                         onCloseDrivers = VehicleRuntime::closeEndDriverList,
                     )
                 } else if (showsTripScreen(state)) {
-                    TripScreen(state, activeTrip, snapshot.odometerKm)
+                    TripScreen(state, activeTrip, snapshot.odometerKm, drivers)
                 } else if (consentDriverId != null && showsConsentCard(state, currentCheckin, snapshot.gear, consents)) {
                     // Before V5: the confirmed driver answers the consent card first (first check-in only)
                     ConsentCard(
