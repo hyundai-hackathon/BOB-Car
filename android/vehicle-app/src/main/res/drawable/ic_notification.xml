@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status bar icon: the app icon's logbook in one color (status bar icons are drawn from the alpha only). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:pathData="M7,3.5h10a2,2 0,0 1,2,2v13a2,2 0,0 1,-2,2h-10a2,2 0,0 1,-2,-2v-13a2,2 0,0 1,2,-2z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.5,8.5h1.6l1,-1.5h1.8l1,1.5h1.6v1.6h-7z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M8.5,13h7M8.5,16h5" />
+</vector>
