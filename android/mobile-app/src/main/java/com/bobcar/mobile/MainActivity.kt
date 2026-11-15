@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bobcar.mobile.data.Check
@@ -160,18 +163,33 @@ private fun BottomBar(selected: Tab, toCheck: Int, onSelect: (Tab) -> Unit) {
     ) {
         listOf(
             Triple(Tab.RECORDS, R.drawable.ic_ph_list_bullets, "기록"),
-            Triple(Tab.CHECK, R.drawable.ic_ph_check_square, if (toCheck > 0) "확인 $toCheck" else "확인"),
+            Triple(Tab.CHECK, R.drawable.ic_ph_check_square, "확인"),
             Triple(Tab.VEHICLE, R.drawable.ic_ph_car_profile, "차량"),
         ).forEach { (tab, icon, label) ->
             val color = if (tab == selected) MColors.Accent400 else MColors.Neutral400
             Column(
-                Modifier.weight(1f).heightIn(min = 52.dp).clip(RoundedCornerShape(MDimens.RadiusMd)).clickable { onSelect(tab) },
+                // No clip here: the badge sits partly above the icon
+                Modifier.weight(1f).heightIn(min = 52.dp).clickable { onSelect(tab) },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
-                PhIcon(icon, color, size = 24.dp)
+                Box {
+                    PhIcon(icon, color, size = 24.dp)
+                    if (tab == Tab.CHECK && toCheck > 0) CountBadge(toCheck, Modifier.align(Alignment.TopEnd).offset(x = 10.dp, y = (-5).dp))
+                }
                 Text(label, fontSize = 12.sp, color = color)
             }
         }
+    }
+}
+
+/** Number on the 확인 icon: accent dot, page-color digits ("9+" above 9). */
+@Composable
+private fun CountBadge(count: Int, modifier: Modifier) {
+    Box(
+        modifier.defaultMinSize(minWidth = 18.dp, minHeight = 18.dp).clip(RoundedCornerShape(9.dp)).background(MColors.Accent).padding(horizontal = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(if (count > 9) "9+" else count.toString(), fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold, color = MColors.Bg)
     }
 }
