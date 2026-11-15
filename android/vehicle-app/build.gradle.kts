@@ -36,8 +36,9 @@ android {
     }
 
     buildTypes {
-        // Server settings (CLAUDE.md rule 6-1). Override with -Pbobcar.serverUrl / authUrl / firebaseApiKey
-        // (e.g. in ~/.gradle/gradle.properties; never committed).
+        // Server settings (CLAUDE.md rule 6-1). Debug: -Pbobcar.serverUrl / authUrl / firebaseApiKey.
+        // Release: -Pbobcar.release.serverUrl / authUrl / firebaseApiKey, so a real server set for release never
+        // changes debug builds (e.g. in ~/.gradle/gradle.properties; never committed).
         // SERVER_URL: base URL ending at the Functions region; the app adds /api/v1/...
         // AUTH_URL: Firebase Auth emulator; empty = Google's real Auth endpoints (HTTPS).
         // FIREBASE_API_KEY: the project's Web API key (sent in a header, never in a URL); the emulator takes any value.
@@ -48,10 +49,10 @@ android {
             buildConfigField("String", "FIREBASE_API_KEY", configString(prop("bobcar.firebaseApiKey") ?: "emulator"))
         }
         release {
-            // No server until a real HTTPS server exists: records stay in the upload queue
-            buildConfigField("String", "SERVER_URL", configString(prop("bobcar.serverUrl") ?: ""))
-            buildConfigField("String", "AUTH_URL", configString(prop("bobcar.authUrl") ?: ""))
-            buildConfigField("String", "FIREBASE_API_KEY", configString(prop("bobcar.firebaseApiKey") ?: ""))
+            // The real HTTPS server when bobcar.release.* is set; without it records stay in the upload queue
+            buildConfigField("String", "SERVER_URL", configString(prop("bobcar.release.serverUrl") ?: ""))
+            buildConfigField("String", "AUTH_URL", configString(prop("bobcar.release.authUrl") ?: ""))
+            buildConfigField("String", "FIREBASE_API_KEY", configString(prop("bobcar.release.firebaseApiKey") ?: ""))
             isDebuggable = false
             isMinifyEnabled = false
             proguardFiles(
