@@ -236,10 +236,15 @@ function itemCard(item) {
       iconName: "warning-circle",
       tag: "미기록 운행",
       title: `운전자 미상 ${km(item.km)} km`,
-      detail:
+      detail: [
         item.startKm != null && item.endKm != null
-          ? `운전자 확인 없이 주행했습니다. 누적 거리 ${km(item.startKm)} → ${km(item.endKm)} km`
-          : "운전자 확인 없이 주행했습니다",
+          ? `운전자 확인 없이 주행했습니다. 누적 거리 ${km(item.startKm)} → ${km(item.endKm)} km.`
+          : "운전자 확인 없이 주행했습니다.",
+        item.assignedDriverName ? `휴대폰에서 ${item.assignedDriverName} 님으로 지정됨 (본인 확인 대기).` : null,
+        memoText(item.memo),
+      ]
+        .filter(Boolean)
+        .join(" "),
       when: range(item.since ?? item.foundAt, item.foundAt),
       meta: logbookLink(),
     });
@@ -257,6 +262,7 @@ function itemCard(item) {
       item.reason === "NO_RESERVATION" ? "이 시간대에 예약이 없었습니다." : `예약자 ${item.reservedDriverName} 님과 다른 운전자입니다.`,
       trips.length === 0 ? "아직 운행 전입니다" : trips.length > 1 ? `운행 ${trips.length}건` : null,
       purposeNote,
+      memoText(trips.map((t) => t.memo).filter(Boolean).pop()),
     ]
       .filter(Boolean)
       .join(" "),
@@ -266,6 +272,11 @@ function itemCard(item) {
 }
 
 const PURPOSE = { BUSINESS: "업무", COMMUTE: "출퇴근", PERSONAL: "개인" };
+
+/** The driver's note from the phone (visit purpose, passengers; their explanation of the flag). */
+function memoText(memo) {
+  return memo ? `운전자 메모: “${memo}”` : null;
+}
 
 function purposeText(trips) {
   const last = trips[trips.length - 1];
@@ -358,10 +369,22 @@ function logbookRow(r) {
   const personal = r.purpose === "PERSONAL";
   const user = r.unrecorded
     ? h("span", { class: "unknown-driver" }, icon("warning-circle"), "운전자 미상")
-    : h("span", {}, [r.department, r.driverName].filter(Boolean).join(" "), r.driverProvisional ? h("span", { class: "provisional" }, " · 잠정") : null);
+    : h(
+        "span",
+        {},
+        [r.department, r.driverName].filter(Boolean).join(" "),
+        r.driverProvisional ? h("span", { class: "provisional" }, " · 잠정") : null,
+        r.claimedUnrecorded
+          ? h("span", { class: "phone-note", title: "미기록 운행을 운전자가 휴대폰에서 본인 운행으로 확인" }, "미기록 → 휴대폰 확인")
+          : r.editedOnPhone
+            ? h("span", { class: "phone-note", title: "운전자가 휴대폰에서 운전자·용도를 확인하거나 고침 (수정 이력 보관)" }, "휴대폰에서 수정")
+            : null,
+      );
   const [label, cls] = r.unrecorded ? ["미기록 운행", "tag-outline"] : PURPOSE_TAG[r.purpose] ?? ["—", "tag-neutral"];
   const purpose = h("span", { class: `tag ${cls}`, title: !r.unrecorded && r.purposeProvisional ? "운전자가 확인하지 않은 자동 값" : null }, label);
-  const dest = r.unrecorded ? h("span", { class: "muted" }, "—") : personal ? h("span", { class: "muted" }, "표시 안 함") : r.destination ?? h("span", { class: "muted" }, "—");
+  const place = r.unrecorded ? h("span", { class: "muted" }, "—") : personal ? h("span", { class: "muted" }, "표시 안 함") : r.destination ?? h("span", { class: "muted" }, "—");
+  // A personal trip's note is not shown either
+  const dest = r.memo && !personal ? h("span", {}, place, h("span", { class: "memo" }, `메모 ${r.memo}`)) : place;
   const toll = r.unrecorded || personal || r.expectedTollFare == null ? h("span", { class: "muted" }, "—") : won(r.expectedTollFare);
   return h(
     "tr",
