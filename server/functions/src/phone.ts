@@ -4,7 +4,7 @@ import { distanceOf, driversById, koreaMonth, logbookView, vehicleOf } from "./a
 import { COL, db } from "./db";
 import { driverBefore, EVENT_CHARGE, FLAG_OPEN, FLAG_RESOLVED } from "./reconcile";
 import { corrected, STATUS_ACTIVE, STATUS_ENDED, TRIP_PURPOSES, type TripCorrection } from "./trips";
-import { FLAG_KIND_UNRECORDED, onTripDocChanged, TRIP_STATUS_UNRECORDED } from "./usage";
+import { EVENT_UNRECORDED, FLAG_KIND_UNRECORDED, onTripDocChanged, TRIP_STATUS_UNRECORDED } from "./usage";
 
 /*
  * The phone app (M1, Figma Mobile M1–M4): a driver finishes on the phone what the car could not settle,
@@ -328,7 +328,7 @@ function parseChange(body: unknown): Change {
 
 /**
  * The car's state for the phone: parked or driving, battery % (the newer of the last trip end and the last
- * charge found), last charge, odometer, this month's distance and business ratio (the logbook figures), the
+ * charge found), last charge, odometer (the newest reading, see [latestOdometer]), this month's distance and business ratio (the logbook figures), the
  * last driver, and when the car last sent anything. The car's own queue is not visible to the server.
  * [vehicleId] empty: the car of the driver's latest trip, else the first registered car.
  */
@@ -336,13 +336,14 @@ export async function vehicleStatus(uid: string, vehicleId: string | null, now: 
   const me = await phoneDriver(uid);
   const id = vehicleId ?? (await latestVehicleOf(me.driverId)) ?? (await firstVehicle());
   if (!id) throw new PhoneError(404, "vehicle not found");
-  const [vehicle, snap, charges, logbook, lastDriverId, drivers] = await Promise.all([
+  const [vehicle, snap, charges, logbook, lastDriverId, drivers, odometer] = await Promise.all([
     vehicleOf(id),
     db().collection(COL.vehicles).doc(id).get(),
     db().collection(COL.events).where("vehicleId", "==", id).where("type", "==", EVENT_CHARGE).get(),
     logbookView(id, koreaMonth(now)),
     driverBefore(id, now),
     driversById(),
+    latestOdometer(id),
   ]);
   if (!vehicle) throw new PhoneError(404, "vehicle not found");
 
@@ -361,7 +362,7 @@ export async function vehicleStatus(uid: string, vehicleId: string | null, now: 
     socPercent: chargeIsNewer ? lastCharge!.toPercent : tripEndSoc,
     socAt: chargeIsNewer ? lastCharge!.at : num(snap.get("lastTripEndedAt")),
     lastCharge,
-    odometerKm: num(snap.get("lastOdometerKm")),
+    odometerKm: odometer,
     month: logbook?.month ?? koreaMonth(now),
     monthKm: logbook?.summary.totalKm ?? 0,
     monthTrips: logbook?.summary.trips ?? 0,
@@ -369,6 +370,28 @@ export async function vehicleStatus(uid: string, vehicleId: string | null, now: 
     lastDriverName: lastDriverId ? drivers.get(lastDriverId)?.name ?? lastDriverId : null,
     lastUploadAt: num(snap.get("lastUploadAt")),
   };
+}
+
+/**
+ * The newest odometer reading the server has: the last trip end (the vehicle baseline), the end of the
+ * latest unrecorded drive the car found at boarding, or the start of the trip running now. The baseline
+ * alone moves only when a trip ends, so it lags after boardings without a trip. Display only: the
+ * baseline the car compares against is not changed.
+ */
+async function latestOdometer(vehicleId: string): Promise<number | null> {
+  const vehicle = await db().collection(COL.vehicles).doc(vehicleId).get();
+  const readings: Array<{ km: number | null; at: number }> = [
+    { km: num(vehicle.get("lastOdometerKm")), at: num(vehicle.get("lastTripEndedAt")) ?? 0 },
+  ];
+  const [unrecorded, active] = await Promise.all([
+    db().collection(COL.events).where("vehicleId", "==", vehicleId).where("type", "==", EVENT_UNRECORDED).get(),
+    vehicle.get("activeTripId") != null ? db().collection(COL.trips).doc(`${vehicleId}_${vehicle.get("activeTripId")}`).get() : null,
+  ]);
+  for (const e of unrecorded.docs) {
+    readings.push({ km: numberIn(String(e.get("detail") ?? ""), "to"), at: num(e.get("occurredAt")) ?? 0 });
+  }
+  if (active?.exists) readings.push({ km: num(active.get("startOdometerKm")), at: num(active.get("startedAt")) ?? 0 });
+  return readings.filter((r) => r.km !== null).sort((a, b) => b.at - a.at)[0]?.km ?? null;
 }
 
 async function latestVehicleOf(driverId: string): Promise<string | null> {

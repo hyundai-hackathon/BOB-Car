@@ -249,6 +249,27 @@ describe("vehicle", () => {
   });
 });
 
+describe("vehicle odometer", () => {
+  it("shows the newest reading: an unrecorded drive found after the last trip end", async () => {
+    await upload(trip(HOLDER, 1, T, T + 30 * MIN));
+    // Boarding later: the car reads 13,040 km (e.g. the console value) and reports the gap
+    await upload(event("drv-002", "UnrecordedDrive", T + 120 * MIN, `km=4852.00 from=8188.0 to=13040.0 sinceAt=${T + 30 * MIN}`));
+    const phone = await phoneOf(HOLDER);
+
+    expect((await phone("get", "/v1/phone/vehicle")).body.odometerKm).toBe(13_040);
+    // The baseline the car compares against stays at the last trip end
+    expect((await db().collection(COL.vehicles).doc(VEHICLE).get()).get("lastOdometerKm")).toBe(12_358.4);
+  });
+
+  it("a trip ending later wins again", async () => {
+    await upload(event("drv-002", "UnrecordedDrive", T, `km=6.00 from=12334.0 to=12340.0 sinceAt=${T - 60 * MIN}`));
+    await upload(trip(HOLDER, 1, T + 10 * MIN, T + 30 * MIN));
+    const phone = await phoneOf(HOLDER);
+
+    expect((await phone("get", "/v1/phone/vehicle")).body.odometerKm).toBe(12_358.4);
+  });
+});
+
 async function reservationId(): Promise<string> {
   const snaps = await db().collection(COL.reservations).where("vehicleId", "==", VEHICLE).get();
   return snaps.docs.find((d) => (d.get("startAt") as number) <= T && (d.get("endAt") as number) > T)!.id;
