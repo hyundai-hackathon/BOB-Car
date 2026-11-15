@@ -114,7 +114,7 @@ data class DriverConsentEntity(
     /** AGREED, DEFERRED */
     val status: String,
     val decidedAt: Long,
-    /** Version of the notice text the driver answered (checkin ConsentNotice.VERSION) */
+    /** Version of the notice text the driver answered (shared ConsentNotice.VERSION) */
     val noticeVersion: Int,
 ) {
     companion object {
