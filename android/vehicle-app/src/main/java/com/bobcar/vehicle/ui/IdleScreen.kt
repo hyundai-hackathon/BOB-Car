@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -142,17 +145,33 @@ private fun InfoCard(label: String, modifier: Modifier, content: @Composable () 
 
 @Composable
 private fun StatValue(value: String, unit: String) {
-    Text(
-        buildAnnotatedString {
-            append(value)
-            withStyle(SpanStyle(fontSize = 32.sp, fontWeight = FontWeight.Normal, color = BobColors.TextSecondary)) {
-                append(" $unit")
+    // Long values ("66,583 km") would push the unit out of the card: shrink the whole line until it fits
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val measurer = rememberTextMeasurer()
+        val maxWidth = constraints.maxWidth
+        val scale = remember(value, unit, maxWidth) {
+            var s = 1f
+            while (s > MIN_STAT_SCALE && measurer.measure(statText(value, unit, s), statStyle(s), maxLines = 1, softWrap = false).size.width > maxWidth) {
+                s -= 0.05f
             }
-        },
-        style = IdleType.Stat,
-        maxLines = 1,
-    )
+            s
+        }
+        Text(statText(value, unit, scale), style = statStyle(scale), maxLines = 1, softWrap = false)
+    }
 }
+
+private const val MIN_STAT_SCALE = 0.5f
+
+/** Value in the stat style, unit smaller and lighter ("78 %"), both scaled by [scale]. */
+private fun statText(value: String, unit: String, scale: Float) = buildAnnotatedString {
+    append(value)
+    withStyle(SpanStyle(fontSize = 32.sp * scale, fontWeight = FontWeight.Normal, color = BobColors.TextSecondary)) {
+        append(" $unit")
+    }
+}
+
+/** The line height stays the same so the card does not move when the text shrinks. */
+private fun statStyle(scale: Float) = IdleType.Stat.copy(fontSize = IdleType.Stat.fontSize * scale)
 
 /** What the status line under the headline says about the upload queue. */
 data class IdleStatus(val kind: Kind, val text: String) {
