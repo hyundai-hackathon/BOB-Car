@@ -55,6 +55,13 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     private val api = PhoneApi(ApiCaller(PhoneApi.config, ServerClients.tokens(app, PhoneApi.config)))
 
+    /**
+     * The person chosen on this phone (app-made driver ID only; app data is not backed up). When the sign-in
+     * changes (the Auth emulator keeps no refresh tokens across a restart, or the stored token is lost), the
+     * server no longer knows this phone and the same person is linked again without asking.
+     */
+    private val chosen = app.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -62,19 +69,40 @@ class AppModel(app: Application) : AndroidViewModel(app) {
         start()
     }
 
-    /** Who is this phone? Not linked yet → pick; not agreed → consent; else the records. */
+    /**
+     * Who is this phone? Not linked → the remembered person again, or the list to pick from;
+     * not agreed → consent; else the records.
+     */
     fun start() = launch(showBusy = false) {
         _state.update { it.copy(stage = Stage.LOADING, problem = null) }
         when (val me = io { api.me() }) {
             is ApiResult.Ok -> enter(me.value)
-            is ApiResult.Failed -> if (me.problem == Problem.NOT_LINKED) showPick() else fail(me.problem)
+            is ApiResult.Failed -> if (me.problem == Problem.NOT_LINKED) relinkOrPick() else fail(me.problem)
         }
     }
 
     fun pick(driverId: String) = launch {
         when (val me = io { api.link(driverId) }) {
-            is ApiResult.Ok -> enter(me.value)
+            is ApiResult.Ok -> {
+                chosen.edit().putString(KEY_DRIVER, driverId).apply()
+                enter(me.value)
+            }
             is ApiResult.Failed -> _state.update { it.copy(problem = me.problem) }
+        }
+    }
+
+    private suspend fun relinkOrPick() {
+        val remembered = chosen.getString(KEY_DRIVER, null) ?: return showPick()
+        when (val me = io { api.link(remembered) }) {
+            is ApiResult.Ok -> {
+                Log.i(TAG, "linked again to the remembered person")
+                enter(me.value)
+            }
+            is ApiResult.Failed -> {
+                // The person is gone from the staff list (or the server refuses): ask again
+                if (me.problem != Problem.OFFLINE) chosen.edit().remove(KEY_DRIVER).apply()
+                if (me.problem == Problem.OFFLINE) fail(me.problem) else showPick()
+            }
         }
     }
 
@@ -183,5 +211,7 @@ class AppModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val TAG = "BOBCar.Phone"
+        const val PREFS = "bobcar_phone"
+        const val KEY_DRIVER = "chosen_driver_id"
     }
 }
