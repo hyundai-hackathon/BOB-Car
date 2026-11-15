@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The icon's logbook with a margin: the full-size layer reached the edge of the adaptive icon safe zone and was
+     cut by system masks (e.g. the driving restriction screen). 18% on each side = about the launcher-192 proportion. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@mipmap/ic_launcher_foreground"
+    android:inset="18%" />
